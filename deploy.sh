@@ -25,3 +25,21 @@ gcloud run deploy $SERVICE_NAME \
   --port 8080
 
 echo "=== Deploy complete ==="
+
+echo "=== Running health check ==="
+SERVICE_URL=$(gcloud run services describe $SERVICE_NAME --region $REGION --format 'value(status.url)')
+TOKEN=$(gcloud auth print-identity-token)
+
+# gRPC health check
+HEALTH_RESPONSE=$(grpcurl -H "Authorization: Bearer $TOKEN" \
+  -d '{"service": ""}' \
+  ${SERVICE_URL#https://}:443 \
+  grpc.health.v1.Health/Check 2>&1) || true
+
+if echo "$HEALTH_RESPONSE" | grep -q '"status": "SERVING"'; then
+  echo "✓ Health check passed: SERVING"
+else
+  echo "✗ Health check failed:"
+  echo "$HEALTH_RESPONSE"
+  exit 1
+fi
