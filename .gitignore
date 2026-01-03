@@ -15,3 +15,6 @@ src/proto/*.rs
 
 # Cloned reference repository
 hono-logi/
+
+# Cloud SQL Proxy binary
+cloud-sql-proxy
