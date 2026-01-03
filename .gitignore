@@ -22,3 +22,4 @@ cloud-sql-proxy
 # Database dumps
 *.zip
 *.sql
+!migrations/*.sql
