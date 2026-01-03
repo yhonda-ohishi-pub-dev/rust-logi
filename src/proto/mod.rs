@@ -16,3 +16,7 @@ pub mod car_inspection {
 pub mod cam_files {
     include!("logi.cam_files.rs");
 }
+
+pub mod health {
+    include!("grpc.health.v1.rs");
+}

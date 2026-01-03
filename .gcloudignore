@@ -1,0 +1,7 @@
+.git
+.gitignore
+target/
+hono-logi/
+.claude/
+*.md
+.env

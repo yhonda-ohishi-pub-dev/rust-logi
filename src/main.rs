@@ -7,10 +7,11 @@ use rust_logi::proto::cam_files::cam_files_service_server::CamFilesServiceServer
 use rust_logi::proto::car_inspection::car_inspection_files_service_server::CarInspectionFilesServiceServer;
 use rust_logi::proto::car_inspection::car_inspection_service_server::CarInspectionServiceServer;
 use rust_logi::proto::files::files_service_server::FilesServiceServer;
+use rust_logi::proto::health::health_server::HealthServer;
 use rust_logi::services::cam_files_service::CamFileExeStageServiceImpl;
 use rust_logi::services::{
     CamFilesServiceImpl, CarInspectionFilesServiceImpl, CarInspectionServiceImpl,
-    FilesServiceImpl,
+    FilesServiceImpl, HealthServiceImpl,
 };
 
 use tonic::transport::Server;
@@ -44,6 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let car_inspection_files_service = CarInspectionFilesServiceImpl::new(pool.clone());
     let cam_files_service = CamFilesServiceImpl::new(pool.clone());
     let cam_file_exe_stage_service = CamFileExeStageServiceImpl::new(pool.clone());
+    let health_service = HealthServiceImpl::new();
 
     // CORS layer for gRPC-Web
     let cors = CorsLayer::new()
@@ -68,6 +70,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ))
         .add_service(CamFilesServiceServer::new(cam_files_service))
         .add_service(CamFileExeStageServiceServer::new(cam_file_exe_stage_service))
+        .add_service(HealthServer::new(health_service))
         .serve(addr)
         .await?;
 
