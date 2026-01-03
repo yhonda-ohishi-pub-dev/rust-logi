@@ -9,6 +9,7 @@ description = "gRPC-Web API server for logistics management"
 # gRPC
 tonic = "0.12"
 tonic-web = "0.12"
+tonic-reflection = "0.12"
 prost = "0.13"
 prost-types = "0.13"
 

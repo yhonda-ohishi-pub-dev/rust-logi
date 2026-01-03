@@ -18,3 +18,7 @@ hono-logi/
 
 # Cloud SQL Proxy binary
 cloud-sql-proxy
+
+# Database dumps
+*.zip
+*.sql

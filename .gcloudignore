@@ -5,3 +5,4 @@ hono-logi/
 .claude/
 *.md
 .env
+*.zip

@@ -114,16 +114,16 @@ CREATE POLICY organization_isolation_policy ON car_inspection
     USING (organization_id::text = current_setting('app.current_organization_id', true))
     WITH CHECK (organization_id::text = current_setting('app.current_organization_id', true));
 
--- Car inspection files table
+-- Car inspection files table (uses ElectCertPublishdate, not Grantdate)
 CREATE TABLE car_inspection_files (
     uuid UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id UUID NOT NULL REFERENCES organizations(id),
     type TEXT NOT NULL,
     "ElectCertMgNo" TEXT NOT NULL,
-    "GrantdateE" TEXT NOT NULL,
-    "GrantdateY" TEXT NOT NULL,
-    "GrantdateM" TEXT NOT NULL,
-    "GrantdateD" TEXT NOT NULL,
+    "ElectCertPublishdateE" TEXT NOT NULL,
+    "ElectCertPublishdateY" TEXT NOT NULL,
+    "ElectCertPublishdateM" TEXT NOT NULL,
+    "ElectCertPublishdateD" TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     modified_at TIMESTAMPTZ,
     deleted_at TIMESTAMPTZ

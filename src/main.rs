@@ -15,8 +15,12 @@ use rust_logi::services::{
 };
 
 use tonic::transport::Server;
+use tonic_reflection::server::Builder as ReflectionBuilder;
 use tower_http::cors::{Any, CorsLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+// Include file descriptor for gRPC reflection
+pub const FILE_DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("logi_descriptor");
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -54,6 +58,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .allow_methods(Any)
         .expose_headers(Any);
 
+    // Build reflection service
+    let reflection_service = ReflectionBuilder::configure()
+        .register_encoded_file_descriptor_set(FILE_DESCRIPTOR_SET)
+        .build_v1()?;
+
     // Parse server address
     let addr: SocketAddr = config.server_addr().parse()?;
     tracing::info!("Listening on {}", addr);
@@ -63,6 +72,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .accept_http1(true) // Required for gRPC-Web
         .layer(cors)
         .layer(tonic_web::GrpcWebLayer::new()) // Enable gRPC-Web
+        .add_service(reflection_service)
         .add_service(FilesServiceServer::new(files_service))
         .add_service(CarInspectionServiceServer::new(car_inspection_service))
         .add_service(CarInspectionFilesServiceServer::new(
