@@ -17,6 +17,15 @@ pub enum AppError {
 
     #[error("Storage error: {0}")]
     Storage(String),
+
+    #[error("File is being restored from Glacier, please try again later")]
+    RestoreInProgress,
+
+    #[error("File requires restoration from Glacier")]
+    RestoreRequired,
+
+    #[error("AWS SDK error: {0}")]
+    AwsSdk(#[from] aws_sdk_s3::error::BuildError),
 }
 
 impl From<AppError> for Status {
@@ -27,6 +36,13 @@ impl From<AppError> for Status {
             AppError::InvalidInput(msg) => Status::invalid_argument(msg),
             AppError::Internal(msg) => Status::internal(msg),
             AppError::Storage(msg) => Status::internal(format!("Storage error: {}", msg)),
+            AppError::RestoreInProgress => {
+                Status::unavailable("File is being restored from Glacier, please try again later")
+            }
+            AppError::RestoreRequired => {
+                Status::failed_precondition("File requires restoration from Glacier")
+            }
+            AppError::AwsSdk(e) => Status::internal(format!("AWS SDK error: {}", e)),
         }
     }
 }

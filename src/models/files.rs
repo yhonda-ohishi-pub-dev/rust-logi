@@ -10,6 +10,22 @@ pub struct FileModel {
     pub created: String,
     pub deleted: Option<String>,
     pub blob: Option<String>,
+    // S3 storage fields
+    pub s3_key: Option<String>,
+    pub storage_class: Option<String>,
+    pub last_accessed_at: Option<String>,
+    // Access tracking fields
+    pub access_count_weekly: Option<i32>,
+    pub access_count_total: Option<i32>,
+    pub promoted_to_standard_at: Option<String>,
+}
+
+/// Result of recording file access
+#[derive(Debug, Clone, FromRow)]
+pub struct FileAccessResult {
+    pub weekly_count: i32,
+    pub total_count: i32,
+    pub recent_7day_count: i32,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
@@ -33,6 +49,29 @@ impl FileModel {
             created: chrono::Utc::now().to_rfc3339(),
             deleted: None,
             blob,
+            s3_key: None,
+            storage_class: None,
+            last_accessed_at: None,
+            access_count_weekly: None,
+            access_count_total: None,
+            promoted_to_standard_at: None,
+        }
+    }
+
+    pub fn new_with_s3(uuid: String, filename: String, file_type: String, s3_key: String) -> Self {
+        Self {
+            uuid,
+            filename,
+            file_type,
+            created: chrono::Utc::now().to_rfc3339(),
+            deleted: None,
+            blob: None,
+            s3_key: Some(s3_key),
+            storage_class: Some("STANDARD".to_string()),
+            last_accessed_at: Some(chrono::Utc::now().to_rfc3339()),
+            access_count_weekly: Some(0),
+            access_count_total: Some(0),
+            promoted_to_standard_at: None,
         }
     }
 }

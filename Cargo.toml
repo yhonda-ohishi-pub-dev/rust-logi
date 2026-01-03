@@ -36,8 +36,9 @@ dotenvy = "0.15"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# GCS
-google-cloud-storage = { version = "0.20", default-features = false, features = ["rustls-tls"] }
+# AWS S3
+aws-sdk-s3 = "1"
+aws-config = { version = "1", features = ["behavior-version-latest"] }
 
 # HTTP/Tower
 tower = "0.4"

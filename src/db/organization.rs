@@ -1,9 +1,30 @@
 use sqlx::{PgConnection, PgPool, Executor};
 use std::future::Future;
+use tonic::metadata::MetadataMap;
 
 /// Default organization ID (UUID) for single-tenant mode
 /// This matches the default organization created in migration 00001
 pub const DEFAULT_ORGANIZATION_ID: &str = "00000000-0000-0000-0000-000000000001";
+
+/// gRPC metadata key for organization ID
+pub const ORGANIZATION_METADATA_KEY: &str = "x-organization-id";
+
+/// Extracts organization_id from gRPC request metadata.
+/// Falls back to DEFAULT_ORGANIZATION_ID if not provided.
+pub fn get_organization_from_metadata(metadata: &MetadataMap) -> String {
+    metadata
+        .get(ORGANIZATION_METADATA_KEY)
+        .and_then(|v| v.to_str().ok())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| DEFAULT_ORGANIZATION_ID.to_string())
+}
+
+/// Extracts organization_id from gRPC request.
+/// Falls back to DEFAULT_ORGANIZATION_ID if not provided.
+pub fn get_organization_from_request<T>(request: &tonic::Request<T>) -> String {
+    get_organization_from_metadata(request.metadata())
+}
 
 /// Sets the current organization for the database session.
 /// This must be called at the beginning of each request/transaction.

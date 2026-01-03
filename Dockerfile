@@ -1,5 +1,6 @@
 # Build stage
-FROM rust:1.85-bookworm AS builder
+# Using Rust 1.88 for AWS SDK compatibility (MSRV requirement)
+FROM rust:1.88-bookworm AS builder
 
 # Install protobuf compiler and musl tools for static linking
 RUN apt-get update && apt-get install -y protobuf-compiler musl-tools && rm -rf /var/lib/apt/lists/*

@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use rust_logi::config::Config;
 use rust_logi::db::create_pool;
@@ -13,6 +14,7 @@ use rust_logi::services::{
     CamFilesServiceImpl, CarInspectionFilesServiceImpl, CarInspectionServiceImpl,
     FilesServiceImpl, HealthServiceImpl,
 };
+use rust_logi::storage::S3Client;
 
 use tonic::transport::Server;
 use tonic_reflection::server::Builder as ReflectionBuilder;
@@ -43,8 +45,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pool = create_pool(&config.database_url).await?;
     tracing::info!("Database connection established");
 
+    // Create S3 client if bucket is configured
+    let s3_client = if let Some(bucket) = &config.s3_bucket {
+        tracing::info!("S3 storage enabled: bucket={}", bucket);
+        Some(Arc::new(S3Client::new(bucket.clone()).await))
+    } else {
+        tracing::info!("S3 storage disabled, using database blob storage");
+        None
+    };
+
     // Create services
-    let files_service = FilesServiceImpl::new(pool.clone());
+    let files_service = FilesServiceImpl::new(pool.clone(), s3_client);
     let car_inspection_service = CarInspectionServiceImpl::new(pool.clone());
     let car_inspection_files_service = CarInspectionFilesServiceImpl::new(pool.clone());
     let cam_files_service = CamFilesServiceImpl::new(pool.clone());

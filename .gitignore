@@ -1,5 +1,5 @@
 /target
-Cargo.lock
+# Cargo.lock is committed to pin AWS SDK versions for Docker build
 .env
 *.log
 

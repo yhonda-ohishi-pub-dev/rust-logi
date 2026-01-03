@@ -26,6 +26,9 @@ service FilesService {
 
   // 最近アップロードされたファイル一覧
   rpc ListRecentUploadedFiles(ListFilesRequest) returns (ListFilesResponse);
+
+  // Glacierからファイルを復元リクエスト
+  rpc RestoreFile(RestoreFileRequest) returns (RestoreFileResponse);
 }
 
 // ファイルメタデータ
@@ -36,6 +39,10 @@ message File {
   string created = 4;  // ISO 8601 timestamp
   optional string deleted = 5;
   optional string blob = 6;  // Base64 encoded (for small files)
+  // S3 storage fields
+  optional string s3_key = 7;  // S3 object key
+  optional string storage_class = 8;  // S3 storage class (STANDARD, STANDARD_IA, GLACIER, etc.)
+  optional string last_accessed_at = 9;  // Last access timestamp
 }
 
 // ファイル作成リクエスト
@@ -95,4 +102,19 @@ message FilesAppend {
   int32 page = 5;
   string created = 6;
   optional string deleted = 7;
+}
+
+// Glacier復元リクエスト
+message RestoreFileRequest {
+  string uuid = 1;
+  optional string tier = 2;  // EXPEDITED (1-5min), STANDARD (3-5h), BULK (5-12h)
+  optional int32 days = 3;   // Days to keep restored copy (default: 7)
+}
+
+// Glacier復元レスポンス
+message RestoreFileResponse {
+  string uuid = 1;
+  string restore_status = 2;  // NOT_NEEDED, IN_PROGRESS, COMPLETED, REQUESTED
+  string message = 3;
+  optional string storage_class = 4;
 }
