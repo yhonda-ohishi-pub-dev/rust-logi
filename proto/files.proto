@@ -1,0 +1,98 @@
+syntax = "proto3";
+
+package logi.files;
+
+import "common.proto";
+
+// Files Service - ファイル管理
+service FilesService {
+  // ファイルをアップロード
+  rpc CreateFile(CreateFileRequest) returns (FileResponse);
+
+  // ファイル一覧を取得
+  rpc ListFiles(ListFilesRequest) returns (ListFilesResponse);
+
+  // ファイル情報を取得
+  rpc GetFile(GetFileRequest) returns (FileResponse);
+
+  // ファイルをダウンロード（ストリーミング）
+  rpc DownloadFile(DownloadFileRequest) returns (stream FileChunk);
+
+  // ファイルを削除
+  rpc DeleteFile(DeleteFileRequest) returns (logi.common.Empty);
+
+  // 添付されていないファイル一覧
+  rpc ListNotAttachedFiles(ListFilesRequest) returns (ListFilesResponse);
+
+  // 最近アップロードされたファイル一覧
+  rpc ListRecentUploadedFiles(ListFilesRequest) returns (ListFilesResponse);
+}
+
+// ファイルメタデータ
+message File {
+  string uuid = 1;
+  string filename = 2;
+  string type = 3;  // MIME type
+  string created = 4;  // ISO 8601 timestamp
+  optional string deleted = 5;
+  optional string blob = 6;  // Base64 encoded (for small files)
+}
+
+// ファイル作成リクエスト
+message CreateFileRequest {
+  string filename = 1;
+  string type = 2;  // MIME type
+  bytes content = 3;  // Binary content
+  optional string blob_base64 = 4;  // Alternative: Base64 encoded content
+}
+
+// ファイルレスポンス
+message FileResponse {
+  File file = 1;
+}
+
+// ファイル一覧リクエスト
+message ListFilesRequest {
+  optional logi.common.PaginationRequest pagination = 1;
+  optional string type_filter = 2;  // Filter by MIME type
+}
+
+// ファイル一覧レスポンス
+message ListFilesResponse {
+  repeated File files = 1;
+  optional logi.common.PaginationMeta pagination = 2;
+}
+
+// ファイル取得リクエスト
+message GetFileRequest {
+  string uuid = 1;
+  bool include_blob = 2;  // Include Base64 blob in response
+}
+
+// ファイルダウンロードリクエスト
+message DownloadFileRequest {
+  string uuid = 1;
+}
+
+// ファイルチャンク（ストリーミング用）
+message FileChunk {
+  bytes data = 1;
+  int64 offset = 2;
+  int64 total_size = 3;
+}
+
+// ファイル削除リクエスト
+message DeleteFileRequest {
+  string uuid = 1;
+}
+
+// FilesAppend - ファイル追加情報
+message FilesAppend {
+  string file_uuid = 1;
+  string appendname = 2;
+  string appendtype = 3;
+  string type = 4;
+  int32 page = 5;
+  string created = 6;
+  optional string deleted = 7;
+}

@@ -1,0 +1,47 @@
+use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct CarInspectionFileModel {
+    pub uuid: String,
+    #[sqlx(rename = "type")]
+    pub file_type: String,
+    #[sqlx(rename = "ElectCertMgNo")]
+    pub elect_cert_mg_no: String,
+    #[sqlx(rename = "GrantdateE")]
+    pub grantdate_e: String,
+    #[sqlx(rename = "GrantdateY")]
+    pub grantdate_y: String,
+    #[sqlx(rename = "GrantdateM")]
+    pub grantdate_m: String,
+    #[sqlx(rename = "GrantdateD")]
+    pub grantdate_d: String,
+    pub created: String,
+    pub modified: Option<String>,
+    pub deleted: Option<String>,
+}
+
+impl CarInspectionFileModel {
+    pub fn new(
+        uuid: String,
+        file_type: String,
+        elect_cert_mg_no: String,
+        grantdate_e: String,
+        grantdate_y: String,
+        grantdate_m: String,
+        grantdate_d: String,
+    ) -> Self {
+        Self {
+            uuid,
+            file_type,
+            elect_cert_mg_no,
+            grantdate_e,
+            grantdate_y,
+            grantdate_m,
+            grantdate_d,
+            created: chrono::Utc::now().to_rfc3339(),
+            modified: None,
+            deleted: None,
+        }
+    }
+}

@@ -1,0 +1,17 @@
+/target
+Cargo.lock
+.env
+*.log
+
+# Generated proto files
+src/proto/*.rs
+!src/proto/mod.rs
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Cloned reference repository
+hono-logi/
