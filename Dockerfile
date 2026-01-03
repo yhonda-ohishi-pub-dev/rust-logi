@@ -1,5 +1,4 @@
 # Build stage
-# Using Rust 1.88 for AWS SDK compatibility (MSRV requirement)
 FROM rust:1.88-bookworm AS builder
 
 # Install protobuf compiler and musl tools for static linking

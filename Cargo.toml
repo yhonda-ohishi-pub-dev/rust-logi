@@ -36,9 +36,8 @@ dotenvy = "0.15"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# AWS S3
-aws-sdk-s3 = "1"
-aws-config = { version = "1", features = ["behavior-version-latest"] }
+# Google Cloud Storage (using rustls for musl compatibility)
+google-cloud-storage = { version = "0.22", default-features = false, features = ["rustls-tls", "auth"] }
 
 # HTTP/Tower
 tower = "0.4"

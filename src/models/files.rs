@@ -5,7 +5,6 @@ use sqlx::FromRow;
 pub struct FileModel {
     pub uuid: String,
     pub filename: String,
-    #[sqlx(rename = "type")]
     pub file_type: String,
     pub created: String,
     pub deleted: Option<String>,

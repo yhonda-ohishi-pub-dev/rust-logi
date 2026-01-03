@@ -14,7 +14,7 @@ use rust_logi::services::{
     CamFilesServiceImpl, CarInspectionFilesServiceImpl, CarInspectionServiceImpl,
     FilesServiceImpl, HealthServiceImpl,
 };
-use rust_logi::storage::S3Client;
+use rust_logi::storage::GcsClient;
 
 use tonic::transport::Server;
 use tonic_reflection::server::Builder as ReflectionBuilder;
@@ -45,17 +45,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pool = create_pool(&config.database_url).await?;
     tracing::info!("Database connection established");
 
-    // Create S3 client if bucket is configured
-    let s3_client = if let Some(bucket) = &config.s3_bucket {
-        tracing::info!("S3 storage enabled: bucket={}", bucket);
-        Some(Arc::new(S3Client::new(bucket.clone()).await))
+    // Create GCS client if bucket is configured
+    let gcs_client = if let Some(bucket) = &config.gcs_bucket {
+        tracing::info!("GCS storage enabled: bucket={}", bucket);
+        match GcsClient::new(bucket.clone()).await {
+            Ok(client) => Some(Arc::new(client)),
+            Err(e) => {
+                tracing::error!("Failed to create GCS client: {}", e);
+                None
+            }
+        }
     } else {
-        tracing::info!("S3 storage disabled, using database blob storage");
+        tracing::info!("GCS storage disabled, using database blob storage");
         None
     };
 
     // Create services
-    let files_service = FilesServiceImpl::new(pool.clone(), s3_client);
+    let files_service = FilesServiceImpl::new(pool.clone(), gcs_client);
     let car_inspection_service = CarInspectionServiceImpl::new(pool.clone());
     let car_inspection_files_service = CarInspectionFilesServiceImpl::new(pool.clone());
     let cam_files_service = CamFilesServiceImpl::new(pool.clone());
