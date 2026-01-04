@@ -342,25 +342,25 @@ impl CarInspectionService for CarInspectionServiceImpl {
             r#"
             SELECT
                 ci.*,
-                pdf.uuid as pdf_uuid,
-                json_file.uuid as json_uuid
+                (SELECT uuid::text FROM car_inspection_files_b
+                 WHERE "ElectCertMgNo" = ci."ElectCertMgNo"
+                   AND "GrantdateE" = ci."GrantdateE"
+                   AND "GrantdateY" = ci."GrantdateY"
+                   AND "GrantdateM" = ci."GrantdateM"
+                   AND "GrantdateD" = ci."GrantdateD"
+                   AND type = 'application/pdf'
+                   AND deleted IS NULL
+                 ORDER BY created DESC LIMIT 1) as pdf_uuid,
+                (SELECT uuid::text FROM car_inspection_files_a
+                 WHERE "ElectCertMgNo" = ci."ElectCertMgNo"
+                   AND "GrantdateE" = ci."GrantdateE"
+                   AND "GrantdateY" = ci."GrantdateY"
+                   AND "GrantdateM" = ci."GrantdateM"
+                   AND "GrantdateD" = ci."GrantdateD"
+                   AND type = 'application/json'
+                   AND deleted IS NULL
+                 ORDER BY created DESC LIMIT 1) as json_uuid
             FROM car_inspection ci
-            LEFT JOIN car_inspection_files_a pdf
-                ON ci."ElectCertMgNo" = pdf."ElectCertMgNo"
-                AND ci."GrantdateE" = pdf."GrantdateE"
-                AND ci."GrantdateY" = pdf."GrantdateY"
-                AND ci."GrantdateM" = pdf."GrantdateM"
-                AND ci."GrantdateD" = pdf."GrantdateD"
-                AND pdf.type = 'application/pdf'
-                AND pdf.deleted_at IS NULL
-            LEFT JOIN car_inspection_files_a json_file
-                ON ci."ElectCertMgNo" = json_file."ElectCertMgNo"
-                AND ci."GrantdateE" = json_file."GrantdateE"
-                AND ci."GrantdateY" = json_file."GrantdateY"
-                AND ci."GrantdateM" = json_file."GrantdateM"
-                AND ci."GrantdateD" = json_file."GrantdateD"
-                AND json_file.type = 'application/json'
-                AND json_file.deleted_at IS NULL
             WHERE ci."TwodimensionCodeInfoValidPeriodExpirdate" >= to_char(CURRENT_DATE, 'YYYYMMDD')
             ORDER BY ci."TwodimensionCodeInfoValidPeriodExpirdate" ASC
             "#,
