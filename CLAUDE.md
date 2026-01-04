@@ -42,7 +42,39 @@ source .env && sqlx migrate run
 - `migrations/` - PostgreSQLマイグレーション (00001-00008)
 - `src/db/organization.rs` - RLSヘルパー関数 (`set_current_organization`, `get_current_organization`)
 - `src/storage/mod.rs` - GCSクライアント
+- `packages/logi-proto/` - npmパッケージ（proto + 生成済みTypeScript）
 - `.env` - 環境変数 (DATABASE_URL等)
+
+## npmパッケージ (@rust-logi/proto)
+
+protoファイルと生成済みTypeScriptを含むnpmパッケージ。
+
+### ビルド
+
+```bash
+cd packages/logi-proto
+npm install
+npm run build  # proto生成 + TypeScriptコンパイル
+```
+
+### 他プロジェクトからの利用
+
+```bash
+npm install ../rust-logi/packages/logi-proto
+```
+
+```typescript
+import { File, FilesService } from "@rust-logi/proto";
+import { createClient } from "@connectrpc/connect";
+import { createGrpcWebTransport } from "@connectrpc/connect-web";
+
+const transport = createGrpcWebTransport({ baseUrl: "http://localhost:50051" });
+const client = createClient(FilesService, transport);
+```
+
+### pre-pushフック
+
+`git push`時に自動でTypeScript生成が実行される。
 
 ## ファイルストレージ
 
