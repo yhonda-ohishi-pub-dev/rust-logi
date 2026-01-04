@@ -349,8 +349,8 @@ impl CarInspectionService for CarInspectionServiceImpl {
                    AND "GrantdateM" = ci."GrantdateM"
                    AND "GrantdateD" = ci."GrantdateD"
                    AND type = 'application/pdf'
-                   AND deleted IS NULL
-                 ORDER BY created DESC LIMIT 1) as pdf_uuid,
+                   AND deleted_at IS NULL
+                 ORDER BY created_at DESC LIMIT 1) as pdf_uuid,
                 (SELECT uuid::text FROM car_inspection_files_a
                  WHERE "ElectCertMgNo" = ci."ElectCertMgNo"
                    AND "GrantdateE" = ci."GrantdateE"
@@ -358,8 +358,8 @@ impl CarInspectionService for CarInspectionServiceImpl {
                    AND "GrantdateM" = ci."GrantdateM"
                    AND "GrantdateD" = ci."GrantdateD"
                    AND type = 'application/json'
-                   AND deleted IS NULL
-                 ORDER BY created DESC LIMIT 1) as json_uuid
+                   AND deleted_at IS NULL
+                 ORDER BY created_at DESC LIMIT 1) as json_uuid
             FROM car_inspection ci
             WHERE ci."TwodimensionCodeInfoValidPeriodExpirdate" >= to_char(CURRENT_DATE, 'YYYYMMDD')
             ORDER BY ci."TwodimensionCodeInfoValidPeriodExpirdate" ASC
