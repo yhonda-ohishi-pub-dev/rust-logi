@@ -16,9 +16,12 @@ pub struct CarInspectionFileModel {
     pub grantdate_m: String,
     #[sqlx(rename = "GrantdateD")]
     pub grantdate_d: String,
-    pub created: String,
-    pub modified: Option<String>,
-    pub deleted: Option<String>,
+    #[sqlx(rename = "created_at")]
+    pub created: chrono::DateTime<chrono::Utc>,
+    #[sqlx(rename = "modified_at")]
+    pub modified: Option<chrono::DateTime<chrono::Utc>>,
+    #[sqlx(rename = "deleted_at")]
+    pub deleted: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 impl CarInspectionFileModel {
@@ -39,7 +42,7 @@ impl CarInspectionFileModel {
             grantdate_y,
             grantdate_m,
             grantdate_d,
-            created: chrono::Utc::now().to_rfc3339(),
+            created: chrono::Utc::now(),
             modified: None,
             deleted: None,
         }

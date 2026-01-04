@@ -352,7 +352,7 @@ impl CarInspectionService for CarInspectionServiceImpl {
                 AND ci."GrantdateM" = pdf."GrantdateM"
                 AND ci."GrantdateD" = pdf."GrantdateD"
                 AND pdf.type = 'application/pdf'
-                AND pdf.deleted IS NULL
+                AND pdf.deleted_at IS NULL
             LEFT JOIN car_inspection_files_a json_file
                 ON ci."ElectCertMgNo" = json_file."ElectCertMgNo"
                 AND ci."GrantdateE" = json_file."GrantdateE"
@@ -360,7 +360,7 @@ impl CarInspectionService for CarInspectionServiceImpl {
                 AND ci."GrantdateM" = json_file."GrantdateM"
                 AND ci."GrantdateD" = json_file."GrantdateD"
                 AND json_file.type = 'application/json'
-                AND json_file.deleted IS NULL
+                AND json_file.deleted_at IS NULL
             WHERE ci."TwodimensionCodeInfoValidPeriodExpirdate" >= to_char(CURRENT_DATE, 'YYYYMMDD')
             ORDER BY ci."TwodimensionCodeInfoValidPeriodExpirdate" ASC
             "#,
@@ -508,9 +508,9 @@ impl CarInspectionFilesServiceImpl {
             grantdate_y: model.grantdate_y.clone(),
             grantdate_m: model.grantdate_m.clone(),
             grantdate_d: model.grantdate_d.clone(),
-            created: model.created.clone(),
-            modified: model.modified.clone(),
-            deleted: model.deleted.clone(),
+            created: model.created.to_rfc3339(),
+            modified: model.modified.map(|dt| dt.to_rfc3339()),
+            deleted: model.deleted.map(|dt| dt.to_rfc3339()),
         }
     }
 }
@@ -526,13 +526,11 @@ impl CarInspectionFilesService for CarInspectionFilesServiceImpl {
             .file
             .ok_or_else(|| Status::invalid_argument("file is required"))?;
 
-        let created = chrono::Utc::now().to_rfc3339();
-
         let result = sqlx::query_as::<_, CarInspectionFileModel>(
             r#"
-            INSERT INTO car_inspection_files_a (uuid, type, "ElectCertMgNo", "GrantdateE", "GrantdateY", "GrantdateM", "GrantdateD", created)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-            ON CONFLICT (uuid) DO UPDATE SET modified = $8
+            INSERT INTO car_inspection_files_a (uuid, organization_id, type, "ElectCertMgNo", "GrantdateE", "GrantdateY", "GrantdateM", "GrantdateD")
+            VALUES ($1, current_setting('app.current_organization_id')::uuid, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (uuid) DO UPDATE SET modified_at = NOW()
             RETURNING *
             "#,
         )
@@ -543,7 +541,6 @@ impl CarInspectionFilesService for CarInspectionFilesServiceImpl {
         .bind(&file.grantdate_y)
         .bind(&file.grantdate_m)
         .bind(&file.grantdate_d)
-        .bind(&created)
         .fetch_one(&self.pool)
         .await
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
@@ -561,14 +558,14 @@ impl CarInspectionFilesService for CarInspectionFilesServiceImpl {
 
         let files = if let Some(elect_cert_mg_no) = req.elect_cert_mg_no {
             sqlx::query_as::<_, CarInspectionFileModel>(
-                r#"SELECT * FROM car_inspection_files_a WHERE "ElectCertMgNo" = $1 AND deleted IS NULL ORDER BY created DESC"#,
+                r#"SELECT * FROM car_inspection_files_a WHERE "ElectCertMgNo" = $1 AND deleted_at IS NULL ORDER BY created_at DESC"#,
             )
             .bind(&elect_cert_mg_no)
             .fetch_all(&self.pool)
             .await
         } else {
             sqlx::query_as::<_, CarInspectionFileModel>(
-                r#"SELECT * FROM car_inspection_files_a WHERE deleted IS NULL ORDER BY created DESC"#,
+                r#"SELECT * FROM car_inspection_files_a WHERE deleted_at IS NULL ORDER BY created_at DESC"#,
             )
             .fetch_all(&self.pool)
             .await
@@ -597,9 +594,9 @@ impl CarInspectionFilesService for CarInspectionFilesServiceImpl {
                 AND cif."GrantdateY" = ci."GrantdateY"
                 AND cif."GrantdateM" = ci."GrantdateM"
                 AND cif."GrantdateD" = ci."GrantdateD"
-            WHERE cif.deleted IS NULL
+            WHERE cif.deleted_at IS NULL
               AND ci."TwodimensionCodeInfoValidPeriodExpirdate" >= to_char(CURRENT_DATE, 'YYYYMMDD')
-            ORDER BY cif.created DESC
+            ORDER BY cif.created_at DESC
             "#,
         )
         .fetch_all(&self.pool)
