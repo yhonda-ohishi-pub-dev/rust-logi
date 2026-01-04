@@ -1,0 +1,251 @@
+syntax = "proto3";
+
+package logi.car_inspection;
+
+import "common.proto";
+
+// CarInspection Service - 車検証管理
+service CarInspectionService {
+  // 車検証を登録
+  rpc CreateCarInspection(CreateCarInspectionRequest) returns (CarInspectionResponse);
+
+  // 車検証一覧を取得
+  rpc ListCarInspections(ListCarInspectionsRequest) returns (ListCarInspectionsResponse);
+
+  // 有効な車検証一覧を取得
+  rpc ListCurrentCarInspections(logi.common.Empty) returns (ListCarInspectionsResponse);
+
+  // 車検証詳細を取得
+  rpc GetCarInspection(GetCarInspectionRequest) returns (CarInspectionResponse);
+
+  // 車検証を削除
+  rpc DeleteCarInspection(DeleteCarInspectionRequest) returns (logi.common.Empty);
+
+  // 期限切れ・期限間近の車検証一覧
+  rpc ListExpiredOrAboutToExpire(logi.common.Empty) returns (ListCarInspectionsResponse);
+
+  // 継続検査対象の車検証一覧
+  rpc ListRenewTargets(logi.common.Empty) returns (ListCarInspectionsResponse);
+}
+
+// CarInspectionFiles Service - 車検証ファイル紐付け
+service CarInspectionFilesService {
+  // 車検証ファイルを登録
+  rpc CreateCarInspectionFile(CreateCarInspectionFileRequest) returns (CarInspectionFileResponse);
+
+  // 車検証ファイル一覧を取得
+  rpc ListCarInspectionFiles(ListCarInspectionFilesRequest) returns (ListCarInspectionFilesResponse);
+
+  // 有効な車検証ファイル一覧を取得
+  rpc ListCurrentCarInspectionFiles(logi.common.Empty) returns (ListCarInspectionFilesResponse);
+}
+
+// 車検証データ（CertInfo）
+message CarInspection {
+  string cert_info_import_file_version = 1;
+  string acceptoutputno = 2;
+  string form_type = 3;
+  string elect_cert_mg_no = 4;
+  string car_id = 5;
+
+  // 電子証明書発行日
+  string elect_cert_publishdate_e = 6;
+  string elect_cert_publishdate_y = 7;
+  string elect_cert_publishdate_m = 8;
+  string elect_cert_publishdate_d = 9;
+
+  // 交付日
+  string grantdate_e = 10;
+  string grantdate_y = 11;
+  string grantdate_m = 12;
+  string grantdate_d = 13;
+
+  string transpotation_bureauchiefname = 14;
+  string entry_no_car_no = 15;
+
+  // 登録年月日
+  string reggrantdate_e = 16;
+  string reggrantdate_y = 17;
+  string reggrantdate_m = 18;
+  string reggrantdate_d = 19;
+
+  // 初度登録年月
+  string firstregistdate_e = 20;
+  string firstregistdate_y = 21;
+  string firstregistdate_m = 22;
+
+  // 車両情報
+  string car_name = 23;
+  string car_name_code = 24;
+  string car_no = 25;
+  string model = 26;
+  string engine_model = 27;
+
+  // 所有者情報
+  string ownername_low_level_char = 28;
+  string ownername_high_level_char = 29;
+  string owner_address_char = 30;
+  string owner_address_num_value = 31;
+  string owner_address_code = 32;
+
+  // 使用者情報
+  string username_low_level_char = 33;
+  string username_high_level_char = 34;
+  string user_address_char = 35;
+  string user_address_num_value = 36;
+  string user_address_code = 37;
+
+  // 使用本拠地
+  string useheadqrter_char = 38;
+  string useheadqrter_num_value = 39;
+  string useheadqrter_code = 40;
+
+  // 車両詳細
+  string car_kind = 41;
+  string use = 42;
+  string private_business = 43;
+  string car_shape = 44;
+  string car_shape_code = 45;
+
+  // 定員・積載量
+  string note_cap = 46;
+  string cap = 47;
+  string note_maxloadage = 48;
+  string maxloadage = 49;
+
+  // 重量
+  string note_car_wgt = 50;
+  string car_wgt = 51;
+  string note_car_total_wgt = 52;
+  string car_total_wgt = 53;
+
+  // サイズ
+  string note_length = 54;
+  string length = 55;
+  string note_width = 56;
+  string width = 57;
+  string note_height = 58;
+  string height = 59;
+
+  // 車軸重
+  string ff_ax_wgt = 60;
+  string fr_ax_wgt = 61;
+  string rf_ax_wgt = 62;
+  string rr_ax_wgt = 63;
+
+  // エンジン
+  string displacement = 64;
+  string fuel_class = 65;
+
+  // 型式指定番号・類別区分番号
+  string model_specify_no = 66;
+  string classify_around_no = 67;
+
+  // 有効期限
+  string valid_period_expirdate_e = 68;
+  string valid_period_expirdate_y = 69;
+  string valid_period_expirdate_m = 70;
+  string valid_period_expirdate_d = 71;
+
+  string note_info = 72;
+
+  // 二次元コード情報
+  string twodimension_code_info_entry_no_car_no = 73;
+  string twodimension_code_info_car_no = 74;
+  string twodimension_code_info_valid_period_expirdate = 75;
+  string twodimension_code_info_model = 76;
+  string twodimension_code_info_model_specify_no_classify_around_no = 77;
+  string twodimension_code_info_char_info = 78;
+  string twodimension_code_info_engine_model = 79;
+  string twodimension_code_info_car_no_stamp_place = 80;
+  string twodimension_code_info_firstregistdate = 81;
+  string twodimension_code_info_ff_ax_wgt = 82;
+  string twodimension_code_info_fr_ax_wgt = 83;
+  string twodimension_code_info_rf_ax_wgt = 84;
+  string twodimension_code_info_rr_ax_wgt = 85;
+  string twodimension_code_info_noise_reg = 86;
+  string twodimension_code_info_near_noise_reg = 87;
+  string twodimension_code_info_drive_method = 88;
+  string twodimension_code_info_opacimeter_meas_car = 89;
+  string twodimension_code_info_nox_pm_meas_mode = 90;
+  string twodimension_code_info_nox_value = 91;
+  string twodimension_code_info_pm_value = 92;
+  string twodimension_code_info_safe_std_date = 93;
+  string twodimension_code_info_fuel_class_code = 94;
+
+  string regist_car_light_car = 95;
+
+  // メタ情報
+  string created = 96;
+  string modified = 97;
+}
+
+// 車検証ファイル
+message CarInspectionFile {
+  string uuid = 1;
+  string type = 2;  // "application/json" or "application/pdf"
+  string elect_cert_mg_no = 3;
+  string grantdate_e = 4;
+  string grantdate_y = 5;
+  string grantdate_m = 6;
+  string grantdate_d = 7;
+  string created = 8;
+  optional string modified = 9;
+  optional string deleted = 10;
+}
+
+// リクエスト/レスポンス
+
+message CreateCarInspectionRequest {
+  CarInspection car_inspection = 1;
+}
+
+message CarInspectionResponse {
+  CarInspection car_inspection = 1;
+}
+
+message ListCarInspectionsRequest {
+  optional logi.common.PaginationRequest pagination = 1;
+  optional string car_id_filter = 2;
+}
+
+message ListCarInspectionsResponse {
+  repeated CarInspection car_inspections = 1;
+  optional logi.common.PaginationMeta pagination = 2;
+}
+
+message GetCarInspectionRequest {
+  string elect_cert_mg_no = 1;
+  string grantdate_e = 2;
+  string grantdate_y = 3;
+  string grantdate_m = 4;
+  string grantdate_d = 5;
+}
+
+message DeleteCarInspectionRequest {
+  string elect_cert_mg_no = 1;
+  string grantdate_e = 2;
+  string grantdate_y = 3;
+  string grantdate_m = 4;
+  string grantdate_d = 5;
+}
+
+// 車検証ファイル関連
+
+message CreateCarInspectionFileRequest {
+  CarInspectionFile file = 1;
+}
+
+message CarInspectionFileResponse {
+  CarInspectionFile file = 1;
+}
+
+message ListCarInspectionFilesRequest {
+  optional string elect_cert_mg_no = 1;
+  optional logi.common.PaginationRequest pagination = 2;
+}
+
+message ListCarInspectionFilesResponse {
+  repeated CarInspectionFile files = 1;
+  optional logi.common.PaginationMeta pagination = 2;
+}

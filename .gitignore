@@ -24,3 +24,8 @@ cloud-sql-proxy
 *.zip
 *.sql
 !migrations/*.sql
+
+# npm packages
+packages/*/node_modules/
+packages/*/dist/
+packages/*/src/gen/

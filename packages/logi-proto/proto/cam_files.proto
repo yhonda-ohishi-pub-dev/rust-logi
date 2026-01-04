@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+package logi.cam_files;
+
+import "common.proto";
+
+// CamFiles Service - カメラファイル管理
+service CamFilesService {
+  // カメラファイル一覧（日付指定）
+  rpc ListCamFiles(ListCamFilesRequest) returns (ListCamFilesResponse);
+
+  // カメラファイル日付一覧
+  rpc ListCamFileDates(logi.common.Empty) returns (ListCamFileDatesResponse);
+
+  // カメラファイル実行情報を作成
+  rpc CreateCamFileExe(CreateCamFileExeRequest) returns (CamFileExeResponse);
+}
+
+// CamFileExeStage Service - カメラファイル実行ステージ
+service CamFileExeStageService {
+  // ステージ一覧
+  rpc ListStages(logi.common.Empty) returns (ListStagesResponse);
+
+  // ステージ作成
+  rpc CreateStage(CreateStageRequest) returns (StageResponse);
+}
+
+// カメラファイル
+message CamFile {
+  string name = 1;
+  string date = 2;
+  string hour = 3;
+  string type = 4;
+  string cam = 5;
+  optional string flickr_id = 6;
+}
+
+// カメラファイル実行情報
+message CamFileExe {
+  string name = 1;
+  string cam = 2;
+  int32 stage = 3;
+}
+
+// カメラファイル実行ステージ
+message CamFileExeStage {
+  int32 stage = 1;
+  string name = 2;
+}
+
+// リクエスト/レスポンス
+
+message ListCamFilesRequest {
+  optional string date = 1;
+  optional string cam = 2;
+  optional logi.common.PaginationRequest pagination = 3;
+}
+
+message ListCamFilesResponse {
+  repeated CamFile files = 1;
+  optional logi.common.PaginationMeta pagination = 2;
+}
+
+message ListCamFileDatesResponse {
+  repeated string dates = 1;
+}
+
+message CreateCamFileExeRequest {
+  CamFileExe exe = 1;
+}
+
+message CamFileExeResponse {
+  CamFileExe exe = 1;
+}
+
+message ListStagesResponse {
+  repeated CamFileExeStage stages = 1;
+}
+
+message CreateStageRequest {
+  CamFileExeStage stage = 1;
+}
+
+message StageResponse {
+  CamFileExeStage stage = 1;
+}

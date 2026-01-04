@@ -1,0 +1,43 @@
+{
+  "name": "@rust-logi/proto",
+  "version": "0.1.0",
+  "description": "Protocol Buffers and generated TypeScript for rust-logi gRPC-Web services",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./proto/*": "./proto/*"
+  },
+  "files": [
+    "dist",
+    "proto"
+  ],
+  "scripts": {
+    "generate": "buf generate",
+    "build": "npm run generate && tsc",
+    "clean": "rm -rf dist src/gen",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "@bufbuild/buf": "^1.47.2",
+    "@bufbuild/protoc-gen-es": "^2.10.2",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.10.2",
+    "@connectrpc/connect": "^2.1.1",
+    "@connectrpc/connect-web": "^2.1.1"
+  },
+  "keywords": [
+    "grpc",
+    "grpc-web",
+    "protobuf",
+    "logi"
+  ],
+  "license": "UNLICENSED",
+  "private": true
+}
