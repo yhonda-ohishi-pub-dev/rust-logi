@@ -21,7 +21,7 @@ gcloud run deploy $SERVICE_NAME \
   --no-allow-unauthenticated \
   --add-cloudsql-instances cloudsql-sv:asia-northeast1:postgres-prod \
   --set-secrets "DATABASE_URL=rust-logi-database-url:latest" \
-  --set-env-vars "SERVER_PORT=8080" \
+  --set-env-vars "SERVER_PORT=8080,GCS_BUCKET=rust-logi-files" \
   --port 8080
 
 echo "=== Deploy complete ==="
