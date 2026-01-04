@@ -1,6 +1,9 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR")?);
 
+    // Proto files are in packages/logi-proto/proto (shared with npm package)
+    let proto_dir = "packages/logi-proto/proto";
+
     // Compile proto files with file descriptor for reflection
     tonic_build::configure()
         .build_server(true)
@@ -9,17 +12,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .file_descriptor_set_path(out_dir.join("logi_descriptor.bin"))
         .compile_protos(
             &[
-                "proto/common.proto",
-                "proto/files.proto",
-                "proto/car_inspection.proto",
-                "proto/cam_files.proto",
-                "proto/health.proto",
+                format!("{}/common.proto", proto_dir),
+                format!("{}/files.proto", proto_dir),
+                format!("{}/car_inspection.proto", proto_dir),
+                format!("{}/cam_files.proto", proto_dir),
+                format!("{}/health.proto", proto_dir),
             ],
-            &["proto"],
+            &[proto_dir],
         )?;
 
     // Rerun if proto files change
-    println!("cargo:rerun-if-changed=proto/");
+    println!("cargo:rerun-if-changed={}/", proto_dir);
 
     Ok(())
 }

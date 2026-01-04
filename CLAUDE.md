@@ -45,26 +45,24 @@ source .env && sqlx migrate run
 - `packages/logi-proto/` - npmパッケージ（proto + 生成済みTypeScript）
 - `.env` - 環境変数 (DATABASE_URL等)
 
-## npmパッケージ (@rust-logi/proto)
+## npmパッケージ (@yhonda-ohishi-pub-dev/logi-proto)
 
-protoファイルと生成済みTypeScriptを含むnpmパッケージ。
+protoファイルと生成済みTypeScriptを含むnpmパッケージ。GitHub Packagesで公開。
 
-### ビルド
-
-```bash
-cd packages/logi-proto
-npm install
-npm run build  # proto生成 + TypeScriptコンパイル
-```
-
-### 他プロジェクトからの利用
+### インストール
 
 ```bash
-npm install ../rust-logi/packages/logi-proto
+# .npmrcに追加
+echo "@yhonda-ohishi-pub-dev:registry=https://npm.pkg.github.com" >> .npmrc
+
+# インストール
+npm install @yhonda-ohishi-pub-dev/logi-proto
 ```
+
+### 使い方
 
 ```typescript
-import { File, FilesService } from "@rust-logi/proto";
+import { File, FilesService } from "@yhonda-ohishi-pub-dev/logi-proto";
 import { createClient } from "@connectrpc/connect";
 import { createGrpcWebTransport } from "@connectrpc/connect-web";
 
@@ -74,7 +72,7 @@ const client = createClient(FilesService, transport);
 
 ### pre-pushフック
 
-`git push`時に自動でTypeScript生成が実行される。
+`git push`時に自動でTypeScript生成とGitHub Packagesへの公開が実行される。
 
 ## ファイルストレージ
 

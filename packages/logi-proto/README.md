@@ -1,27 +1,21 @@
-# @rust-logi/proto
+# @yhonda-ohishi-pub-dev/logi-proto
 
 rust-logi gRPC-WebサービスのProtocol Buffersと生成済みTypeScript。
 
 ## インストール
 
 ```bash
-npm install ../rust-logi/packages/logi-proto
-```
+# .npmrcにGitHub Packages registryを追加
+echo "@yhonda-ohishi-pub-dev:registry=https://npm.pkg.github.com" >> .npmrc
 
-または `package.json` に追加:
-
-```json
-{
-  "dependencies": {
-    "@rust-logi/proto": "file:../rust-logi/packages/logi-proto"
-  }
-}
+# インストール
+npm install @yhonda-ohishi-pub-dev/logi-proto
 ```
 
 ## 使い方
 
 ```typescript
-import { File, FilesService, CreateFileRequest } from "@rust-logi/proto";
+import { File, FilesService, CreateFileRequest } from "@yhonda-ohishi-pub-dev/logi-proto";
 import { createClient } from "@connectrpc/connect";
 import { createGrpcWebTransport } from "@connectrpc/connect-web";
 
@@ -81,7 +75,7 @@ npm run clean
 
 ```
 packages/logi-proto/
-├── proto/           # Protoファイル
+├── proto/           # Protoファイル (Rust/TypeScript共有)
 ├── src/
 │   ├── gen/         # 生成済みTypeScript (gitignore)
 │   └── index.ts     # エクスポート
