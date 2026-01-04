@@ -138,8 +138,8 @@ impl CarInspectionServiceImpl {
                 .twodimension_code_info_fuel_class_code
                 .clone(),
             regist_car_light_car: model.regist_car_light_car.clone(),
-            created: model.created.clone(),
-            modified: model.modified.clone(),
+            created: model.created_at.to_rfc3339(),
+            modified: model.modified_at.to_rfc3339(),
         }
     }
 }
@@ -155,12 +155,12 @@ impl CarInspectionService for CarInspectionServiceImpl {
             .car_inspection
             .ok_or_else(|| Status::invalid_argument("car_inspection is required"))?;
 
-        let created = chrono::Utc::now().to_rfc3339();
-
         // Use ON CONFLICT DO UPDATE for upsert
+        // Note: created_at and modified_at use DB defaults (NOW())
         let result = sqlx::query_as::<_, CarInspectionModel>(
             r#"
             INSERT INTO car_inspection (
+                organization_id,
                 "CertInfoImportFileVersion", "Acceptoutputno", "FormType", "ElectCertMgNo", "CarId",
                 "ElectCertPublishdateE", "ElectCertPublishdateY", "ElectCertPublishdateM", "ElectCertPublishdateD",
                 "GrantdateE", "GrantdateY", "GrantdateM", "GrantdateD",
@@ -188,8 +188,9 @@ impl CarInspectionService for CarInspectionServiceImpl {
                 "TwodimensionCodeInfoOpacimeterMeasCar", "TwodimensionCodeInfoNoxPmMeasMode",
                 "TwodimensionCodeInfoNoxValue", "TwodimensionCodeInfoPmValue",
                 "TwodimensionCodeInfoSafeStdDate", "TwodimensionCodeInfoFuelClassCode",
-                "RegistCarLightCar", "created", "Modified"
+                "RegistCarLightCar"
             ) VALUES (
+                current_setting('app.current_organization_id')::uuid,
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
                 $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
                 $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
@@ -199,10 +200,10 @@ impl CarInspectionService for CarInspectionServiceImpl {
                 $61, $62, $63, $64, $65, $66, $67, $68, $69, $70,
                 $71, $72, $73, $74, $75, $76, $77, $78, $79, $80,
                 $81, $82, $83, $84, $85, $86, $87, $88, $89, $90,
-                $91, $92, $93, $94, $95, $96, $97
+                $91, $92, $93, $94, $95
             )
-            ON CONFLICT ("ElectCertMgNo", "GrantdateE", "GrantdateY", "GrantdateM", "GrantdateD")
-            DO UPDATE SET "Modified" = $97
+            ON CONFLICT (organization_id, "ElectCertMgNo", "GrantdateE", "GrantdateY", "GrantdateM", "GrantdateD")
+            DO UPDATE SET modified_at = NOW()
             RETURNING *
             "#,
         )
@@ -301,8 +302,6 @@ impl CarInspectionService for CarInspectionServiceImpl {
         .bind(&ci.twodimension_code_info_safe_std_date)
         .bind(&ci.twodimension_code_info_fuel_class_code)
         .bind(&ci.regist_car_light_car)
-        .bind(&created)
-        .bind(&created)
         .fetch_one(&self.pool)
         .await
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?;

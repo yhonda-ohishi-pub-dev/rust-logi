@@ -232,8 +232,6 @@ pub struct CarInspectionModel {
     pub regist_car_light_car: String,
 
     // メタ情報
-    #[sqlx(rename = "Created")]
-    pub created: String,
-    #[sqlx(rename = "Modified")]
-    pub modified: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub modified_at: chrono::DateTime<chrono::Utc>,
 }
