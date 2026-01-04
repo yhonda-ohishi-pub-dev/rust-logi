@@ -140,6 +140,8 @@ impl CarInspectionServiceImpl {
             regist_car_light_car: model.regist_car_light_car.clone(),
             created: model.created_at.to_rfc3339(),
             modified: model.modified_at.to_rfc3339(),
+            pdf_uuid: model.pdf_uuid.clone(),
+            json_uuid: model.json_uuid.clone(),
         }
     }
 }
@@ -335,12 +337,32 @@ impl CarInspectionService for CarInspectionServiceImpl {
         &self,
         _request: Request<Empty>,
     ) -> Result<Response<ListCarInspectionsResponse>, Status> {
-        // Get current car inspections (valid period not expired)
+        // Get current car inspections (valid period not expired) with file UUIDs
         let inspections = sqlx::query_as::<_, CarInspectionModel>(
             r#"
-            SELECT * FROM car_inspection
-            WHERE "TwodimensionCodeInfoValidPeriodExpirdate" >= to_char(CURRENT_DATE, 'YYYYMMDD')
-            ORDER BY "TwodimensionCodeInfoValidPeriodExpirdate" ASC
+            SELECT
+                ci.*,
+                pdf.uuid as pdf_uuid,
+                json_file.uuid as json_uuid
+            FROM car_inspection ci
+            LEFT JOIN car_inspection_files_a pdf
+                ON ci."ElectCertMgNo" = pdf."ElectCertMgNo"
+                AND ci."GrantdateE" = pdf."GrantdateE"
+                AND ci."GrantdateY" = pdf."GrantdateY"
+                AND ci."GrantdateM" = pdf."GrantdateM"
+                AND ci."GrantdateD" = pdf."GrantdateD"
+                AND pdf.type = 'application/pdf'
+                AND pdf.deleted IS NULL
+            LEFT JOIN car_inspection_files_a json_file
+                ON ci."ElectCertMgNo" = json_file."ElectCertMgNo"
+                AND ci."GrantdateE" = json_file."GrantdateE"
+                AND ci."GrantdateY" = json_file."GrantdateY"
+                AND ci."GrantdateM" = json_file."GrantdateM"
+                AND ci."GrantdateD" = json_file."GrantdateD"
+                AND json_file.type = 'application/json'
+                AND json_file.deleted IS NULL
+            WHERE ci."TwodimensionCodeInfoValidPeriodExpirdate" >= to_char(CURRENT_DATE, 'YYYYMMDD')
+            ORDER BY ci."TwodimensionCodeInfoValidPeriodExpirdate" ASC
             "#,
         )
         .fetch_all(&self.pool)

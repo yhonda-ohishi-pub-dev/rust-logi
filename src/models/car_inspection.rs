@@ -234,4 +234,10 @@ pub struct CarInspectionModel {
     // メタ情報
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub modified_at: chrono::DateTime<chrono::Utc>,
+
+    // ファイル紐付け情報（JOINで取得）
+    #[sqlx(default)]
+    pub pdf_uuid: Option<String>,
+    #[sqlx(default)]
+    pub json_uuid: Option<String>,
 }

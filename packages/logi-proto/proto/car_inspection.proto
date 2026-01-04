@@ -178,6 +178,10 @@ message CarInspection {
   // メタ情報
   string created = 96;
   string modified = 97;
+
+  // ファイル紐付け情報
+  optional string pdf_uuid = 98;
+  optional string json_uuid = 99;
 }
 
 // 車検証ファイル
