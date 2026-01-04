@@ -1,0 +1,40 @@
+name: Publish Proto Package
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'packages/logi-proto/**'
+      - 'proto/**'
+
+jobs:
+  publish:
+    runs-on: [self-hosted, Linux]
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@yhonda-ohishi-pub-dev'
+
+      - name: Install dependencies
+        working-directory: packages/logi-proto
+        run: npm ci
+
+      - name: Build
+        working-directory: packages/logi-proto
+        run: npm run build
+
+      - name: Publish to GitHub Packages
+        working-directory: packages/logi-proto
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
