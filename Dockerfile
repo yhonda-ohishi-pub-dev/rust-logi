@@ -12,7 +12,7 @@ WORKDIR /app
 # Copy manifests
 COPY Cargo.toml Cargo.lock* ./
 COPY build.rs ./
-COPY proto ./proto
+COPY packages/logi-proto/proto ./packages/logi-proto/proto
 
 # Create dummy src for dependency caching
 RUN mkdir -p src/proto && echo "fn main() {}" > src/main.rs
