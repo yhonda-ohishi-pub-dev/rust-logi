@@ -343,7 +343,8 @@ impl CarInspectionService for CarInspectionServiceImpl {
             SELECT
                 ci.*,
                 (SELECT uuid::text FROM car_inspection_files_b
-                 WHERE "ElectCertMgNo" = ci."ElectCertMgNo"
+                 WHERE organization_id = ci.organization_id
+                   AND "ElectCertMgNo" = ci."ElectCertMgNo"
                    AND "GrantdateE" = ci."GrantdateE"
                    AND "GrantdateY" = ci."GrantdateY"
                    AND "GrantdateM" = ci."GrantdateM"
@@ -352,7 +353,8 @@ impl CarInspectionService for CarInspectionServiceImpl {
                    AND deleted_at IS NULL
                  ORDER BY created_at DESC LIMIT 1) as pdf_uuid,
                 (SELECT uuid::text FROM car_inspection_files_a
-                 WHERE "ElectCertMgNo" = ci."ElectCertMgNo"
+                 WHERE organization_id = ci.organization_id
+                   AND "ElectCertMgNo" = ci."ElectCertMgNo"
                    AND "GrantdateE" = ci."GrantdateE"
                    AND "GrantdateY" = ci."GrantdateY"
                    AND "GrantdateM" = ci."GrantdateM"
