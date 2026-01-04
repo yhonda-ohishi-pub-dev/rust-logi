@@ -387,6 +387,23 @@ def convert_and_import():
             if current_table:
                 values = line.split("\t")
                 if len(values) == len(copy_columns):
+                    # car_inspection: skip rows where single-digit GrantdateY doesn't have space prefix
+                    # Original format: " 5" (with space) for values < 10, "12" (no space) for values >= 10
+                    if current_table == "car_inspection":
+                        grantdate_y_idx = None
+                        for idx, col in enumerate(copy_columns):
+                            if col == "GrantdateY":
+                                grantdate_y_idx = idx
+                                break
+                        if grantdate_y_idx is not None:
+                            grantdate_y = values[grantdate_y_idx]
+                            # 1桁の数字（10未満）はスペース付きが正しい形式
+                            # "5" -> skip, " 5" -> keep, "12" -> keep
+                            stripped = grantdate_y.strip()
+                            if stripped.isdigit() and int(stripped) < 10 and not grantdate_y.startswith(" "):
+                                i += 1
+                                continue  # Skip non-space-prefixed single digit records
+
                     # Insert org_id at position 1 (after uuid/id)
                     values.insert(1, TEST_ORG_ID)
                     tables_data[current_table]["rows"].append(values)
@@ -482,11 +499,33 @@ def import_table(table, original_cols, rows):
         print(f"    Imported {success_count} rows")
 
 
+def fix_car_inspection_files_grantdate():
+    """Add space prefix to single-digit Grantdate values in car_inspection_files_a/b."""
+    print("\nFixing Grantdate format in car_inspection_files_a/b...")
+
+    # 1桁の数字にスペースを追加（元データはスペースなしで保存されていた）
+    tables = ["car_inspection_files_a", "car_inspection_files_b"]
+    columns = ["GrantdateY", "GrantdateM", "GrantdateD"]
+
+    for table in tables:
+        for col in columns:
+            sql = f"""
+            UPDATE {table}
+            SET "{col}" = ' ' || "{col}"
+            WHERE length(trim("{col}")) = 1
+              AND "{col}" NOT LIKE ' %';
+            """
+            result = run_psql(sql, check=False)
+
+    print("Done.")
+
+
 def main():
     extract_sql()
     create_test_org()
     delete_existing_data()
     convert_and_import()
+    fix_car_inspection_files_grantdate()
     print("\nDone!")
 
 

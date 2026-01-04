@@ -43,7 +43,27 @@ source .env && sqlx migrate run
 - `src/db/organization.rs` - RLSヘルパー関数 (`set_current_organization`, `get_current_organization`)
 - `src/storage/mod.rs` - GCSクライアント
 - `packages/logi-proto/` - npmパッケージ（proto + 生成済みTypeScript）
+- `docs/` - 設計ドキュメント
+  - `car-inspection-date-fields.md` - 車検証日付フィールドの仕様（スペース含む値の扱い）
+- `convert_and_import.py` - hono-logiからのデータ移行スクリプト
 - `.env` - 環境変数 (DATABASE_URL等)
+
+## データ移行 (convert_and_import.py)
+
+hono-logiのpg_dumpからrust-logiにデータを移行するスクリプト。
+
+```bash
+python3 convert_and_import.py
+```
+
+### 処理内容
+
+1. pg_dumpのSQLファイルを解析
+2. organization_idを追加してマルチテナント対応
+3. car_inspectionの重複レコード（スペース違い）をスキップ
+4. car_inspection_files_a/bのGrantdateにスペースを追加
+
+詳細は `docs/car-inspection-date-fields.md` を参照。
 
 ## npmパッケージ (@yhonda-ohishi-pub-dev/logi-proto)
 
