@@ -7,8 +7,8 @@ use crate::proto::common::Empty;
 use crate::proto::dtakologs::dtakologs_service_server::DtakologsService;
 use crate::proto::dtakologs::{
     BulkCreateDtakologsRequest, BulkCreateDtakologsResponse, CreateDtakologRequest,
-    CreateDtakologResponse, CurrentListSelectRequest, DeleteResponse, Dtakolog, GetDateRequest,
-    ListDtakologsResponse,
+    CreateDtakologResponse, CurrentListSelectRequest, DeleteResponse, Dtakolog, GetDateRangeRequest,
+    GetDateRequest, ListDtakologsResponse,
 };
 
 pub struct DtakologsServiceImpl {
@@ -22,6 +22,37 @@ impl DtakologsServiceImpl {
 
     fn model_to_proto(model: &DtakologModel) -> Dtakolog {
         model.to_proto()
+    }
+
+    /// Convert YY/MM/DD HH:MM format to ISO 8601 format (2026-01-24T21:06:00+09:00)
+    fn convert_to_iso8601(date_time: &str) -> Result<String, String> {
+        // Expected format: "26/01/24 21:06"
+        let parts: Vec<&str> = date_time.split(' ').collect();
+        if parts.len() != 2 {
+            return Err(format!("Invalid format: expected 'YY/MM/DD HH:MM', got '{}'", date_time));
+        }
+
+        let date_parts: Vec<&str> = parts[0].split('/').collect();
+        if date_parts.len() != 3 {
+            return Err(format!("Invalid date format: expected 'YY/MM/DD', got '{}'", parts[0]));
+        }
+
+        let time_parts: Vec<&str> = parts[1].split(':').collect();
+        if time_parts.len() != 2 {
+            return Err(format!("Invalid time format: expected 'HH:MM', got '{}'", parts[1]));
+        }
+
+        let year: i32 = date_parts[0].parse().map_err(|_| format!("Invalid year: {}", date_parts[0]))?;
+        let month: i32 = date_parts[1].parse().map_err(|_| format!("Invalid month: {}", date_parts[1]))?;
+        let day: i32 = date_parts[2].parse().map_err(|_| format!("Invalid day: {}", date_parts[2]))?;
+        let hour: i32 = time_parts[0].parse().map_err(|_| format!("Invalid hour: {}", time_parts[0]))?;
+        let minute: i32 = time_parts[1].parse().map_err(|_| format!("Invalid minute: {}", time_parts[1]))?;
+
+        // Convert 2-digit year to 4-digit (assume 2000s)
+        let full_year = if year < 100 { 2000 + year } else { year };
+
+        // Format as ISO 8601 with JST timezone (+09:00)
+        Ok(format!("{:04}-{:02}-{:02}T{:02}:{:02}:00+09:00", full_year, month, day, hour, minute))
     }
 }
 
@@ -305,6 +336,12 @@ impl DtakologsService for DtakologsServiceImpl {
             req.vehicle_cd
         );
 
+        // Convert YY/MM/DD HH:MM format to ISO 8601 format (2026-01-24T21:06:00+09:00)
+        let iso_date_time = Self::convert_to_iso8601(&req.date_time).map_err(|e| {
+            Status::invalid_argument(format!("Invalid date_time format: {}. Expected YY/MM/DD HH:MM", e))
+        })?;
+        tracing::info!("Converted date_time: {} -> {}", req.date_time, iso_date_time);
+
         let mut conn = self
             .pool
             .acquire()
@@ -336,7 +373,7 @@ impl DtakologsService for DtakologsServiceImpl {
                 WHERE data_date_time = $1 AND vehicle_cd = $2
                 "#,
             )
-            .bind(&req.date_time)
+            .bind(&iso_date_time)
             .bind(vehicle_cd)
             .fetch_all(&mut *conn)
             .await
@@ -362,7 +399,100 @@ impl DtakologsService for DtakologsServiceImpl {
                 ORDER BY vehicle_cd ASC
                 "#,
             )
-            .bind(&req.date_time)
+            .bind(&iso_date_time)
+            .fetch_all(&mut *conn)
+            .await
+        }
+        .map_err(|e| Status::internal(format!("Failed to fetch dtakologs: {}", e)))?;
+
+        let proto_dtakologs: Vec<Dtakolog> =
+            dtakologs.iter().map(Self::model_to_proto).collect();
+
+        Ok(Response::new(ListDtakologsResponse {
+            dtakologs: proto_dtakologs,
+            pagination: None,
+        }))
+    }
+
+    /// 日付範囲指定で運行ログ取得
+    async fn get_date_range(
+        &self,
+        request: Request<GetDateRangeRequest>,
+    ) -> Result<Response<ListDtakologsResponse>, Status> {
+        let organization_id = get_organization_from_request(&request);
+        let req = request.into_inner();
+        tracing::info!(
+            "GetDateRange called for organization: {}, start: {}, end: {}, vehicle_cd: {:?}",
+            organization_id,
+            req.start_date_time,
+            req.end_date_time,
+            req.vehicle_cd
+        );
+
+        let mut conn = self
+            .pool
+            .acquire()
+            .await
+            .map_err(|e| Status::internal(format!("Failed to acquire connection: {}", e)))?;
+
+        set_current_organization(&mut conn, &organization_id)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to set organization: {}", e)))?;
+
+        let dtakologs = if let Some(vehicle_cd) = req.vehicle_cd {
+            sqlx::query_as::<_, DtakologModel>(
+                r#"
+                SELECT
+                    data_date_time, vehicle_cd, type, all_state_font_color_index,
+                    all_state_ryout_color, branch_cd, branch_name, current_work_cd,
+                    data_filter_type, disp_flag, driver_cd, gps_direction, gps_enable,
+                    gps_latitude, gps_longitude, gps_satellite_num, operation_state,
+                    recive_event_type, recive_packet_type, recive_work_cd, revo,
+                    setting_temp, setting_temp1, setting_temp3, setting_temp4, speed,
+                    sub_driver_cd, temp_state, vehicle_name, address_disp_c, address_disp_p,
+                    all_state, all_state_ex, all_state_font_color, comu_date_time,
+                    current_work_name, driver_name, event_val, gps_lati_and_long, odometer,
+                    recive_type_color_name, recive_type_name, start_work_date_time, state,
+                    state1, state2, state3, state_flag, temp1, temp2, temp3, temp4,
+                    vehicle_icon_color, vehicle_icon_label_for_datetime,
+                    vehicle_icon_label_for_driver, vehicle_icon_label_for_vehicle
+                FROM dtakologs
+                WHERE data_date_time >= $1
+                  AND data_date_time <= $2
+                  AND vehicle_cd = $3
+                ORDER BY data_date_time DESC
+                "#,
+            )
+            .bind(&req.start_date_time)
+            .bind(&req.end_date_time)
+            .bind(vehicle_cd)
+            .fetch_all(&mut *conn)
+            .await
+        } else {
+            sqlx::query_as::<_, DtakologModel>(
+                r#"
+                SELECT
+                    data_date_time, vehicle_cd, type, all_state_font_color_index,
+                    all_state_ryout_color, branch_cd, branch_name, current_work_cd,
+                    data_filter_type, disp_flag, driver_cd, gps_direction, gps_enable,
+                    gps_latitude, gps_longitude, gps_satellite_num, operation_state,
+                    recive_event_type, recive_packet_type, recive_work_cd, revo,
+                    setting_temp, setting_temp1, setting_temp3, setting_temp4, speed,
+                    sub_driver_cd, temp_state, vehicle_name, address_disp_c, address_disp_p,
+                    all_state, all_state_ex, all_state_font_color, comu_date_time,
+                    current_work_name, driver_name, event_val, gps_lati_and_long, odometer,
+                    recive_type_color_name, recive_type_name, start_work_date_time, state,
+                    state1, state2, state3, state_flag, temp1, temp2, temp3, temp4,
+                    vehicle_icon_color, vehicle_icon_label_for_datetime,
+                    vehicle_icon_label_for_driver, vehicle_icon_label_for_vehicle
+                FROM dtakologs
+                WHERE data_date_time >= $1
+                  AND data_date_time <= $2
+                ORDER BY data_date_time DESC
+                "#,
+            )
+            .bind(&req.start_date_time)
+            .bind(&req.end_date_time)
             .fetch_all(&mut *conn)
             .await
         }

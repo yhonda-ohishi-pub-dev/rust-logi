@@ -21,6 +21,9 @@ service DtakologsService {
   // 日付指定で運行ログ取得
   rpc GetDate(GetDateRequest) returns (ListDtakologsResponse);
 
+  // 日付範囲指定で運行ログ取得
+  rpc GetDateRange(GetDateRangeRequest) returns (ListDtakologsResponse);
+
   // 運行ログ作成
   rpc Create(CreateDtakologRequest) returns (CreateDtakologResponse);
 
@@ -108,6 +111,13 @@ message CurrentListSelectRequest {
 message GetDateRequest {
   string date_time = 1;  // YY/MM/DD HH:MM 形式
   optional int32 vehicle_cd = 2;  // 車両CDフィルタ (任意)
+}
+
+// 日付範囲指定リクエスト
+message GetDateRangeRequest {
+  string start_date_time = 1;  // 開始日時 (ISO8601形式: 2026-01-24T00:00:00+09:00)
+  string end_date_time = 2;    // 終了日時 (ISO8601形式: 2026-01-24T23:59:59+09:00)
+  optional int32 vehicle_cd = 3; // 車両CD（指定時はその車両のみ）
 }
 
 // 作成リクエスト

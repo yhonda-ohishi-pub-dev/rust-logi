@@ -1,6 +1,6 @@
 {
   "name": "@yhonda-ohishi-pub-dev/logi-proto",
-  "version": "0.1.3",
+  "version": "0.1.5",
   "description": "Protocol Buffers and generated TypeScript for rust-logi gRPC-Web services",
   "type": "module",
   "main": "./dist/index.js",
