@@ -20,3 +20,11 @@ pub mod cam_files {
 pub mod health {
     include!("grpc.health.v1.rs");
 }
+
+pub mod dtakologs {
+    include!("logi.dtakologs.rs");
+}
+
+pub mod flickr {
+    include!("logi.flickr.rs");
+}

@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package logi.flickr;
+
+import "common.proto";
+
+// Flickr Service - Flickr OAuth連携
+service FlickrService {
+  // OAuth認可URL取得
+  // クライアントはこのURLをブラウザで開いてFlickr認可を行う
+  rpc GetAuthorizationUrl(logi.common.Empty) returns (AuthorizationUrlResponse);
+
+  // コールバック処理
+  // Flickrからのリダイレクト後、トークンを交換してアクセストークンを取得
+  rpc HandleCallback(CallbackRequest) returns (TokenResponse);
+}
+
+// 認可URLレスポンス
+message AuthorizationUrlResponse {
+  string authorization_url = 1;  // Flickr認可ページURL
+  string request_token = 2;      // リクエストトークン (コールバックで使用)
+  string request_token_secret = 3;  // リクエストトークンシークレット
+}
+
+// コールバックリクエスト
+message CallbackRequest {
+  string oauth_token = 1;     // Flickrからのトークン
+  string oauth_verifier = 2;  // Flickrからの検証コード
+  string request_token_secret = 3;  // GetAuthorizationUrlで取得したシークレット
+}
+
+// トークンレスポンス
+message TokenResponse {
+  string access_token = 1;
+  string access_token_secret = 2;
+  string user_nsid = 3;   // FlickrユーザーID
+  string username = 4;    // Flickrユーザー名
+}
