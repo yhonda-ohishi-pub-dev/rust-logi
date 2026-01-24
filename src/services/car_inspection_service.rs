@@ -19,6 +19,21 @@ use crate::proto::car_inspection::{
 };
 use crate::proto::common::Empty;
 
+/// 全角英数字を半角に変換し、スペースを削除する
+fn to_half_width(s: &str) -> String {
+    s.chars()
+        .filter_map(|c| match c {
+            // スペース削除
+            '　' | ' ' => None,
+            // 全角英数字 → 半角
+            '\u{FF21}'..='\u{FF3A}' | '\u{FF41}'..='\u{FF5A}' | '\u{FF10}'..='\u{FF19}' => {
+                Some(char::from_u32(c as u32 - 0xFEE0).unwrap_or(c))
+            }
+            _ => Some(c),
+        })
+        .collect()
+}
+
 pub struct CarInspectionServiceImpl {
     pool: PgPool,
     http_client: Arc<HttpClient>,
@@ -782,7 +797,7 @@ impl CarInspectionService for CarInspectionServiceImpl {
                     grantdate_m: model.grantdate_m.clone(),
                     grantdate_d: model.grantdate_d.clone(),
                     transpotation_bureauchiefname: model.transpotation_bureauchiefname.clone(),
-                    entry_no_car_no: model.entry_no_car_no.clone(),
+                    entry_no_car_no: to_half_width(&model.entry_no_car_no),
                     reggrantdate_e: model.reggrantdate_e.clone(),
                     reggrantdate_y: model.reggrantdate_y.clone(),
                     reggrantdate_m: model.reggrantdate_m.clone(),
