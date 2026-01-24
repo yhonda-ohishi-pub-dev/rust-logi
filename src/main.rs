@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use rust_logi::config::Config;
 use rust_logi::db::create_pool;
+use rust_logi::http_client::HttpClient;
 use rust_logi::proto::cam_files::cam_file_exe_stage_service_server::CamFileExeStageServiceServer;
 use rust_logi::proto::cam_files::cam_files_service_server::CamFilesServiceServer;
 use rust_logi::proto::car_inspection::car_inspection_files_service_server::CarInspectionFilesServiceServer;
@@ -60,9 +61,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None
     };
 
+    // Create HTTP client for external API calls
+    let http_client = Arc::new(HttpClient::new());
+
     // Create services
     let files_service = FilesServiceImpl::new(pool.clone(), gcs_client);
-    let car_inspection_service = CarInspectionServiceImpl::new(pool.clone());
+    let car_inspection_service = CarInspectionServiceImpl::new(
+        pool.clone(),
+        http_client.clone(),
+        config.dtako_api_url.clone(),
+    );
     let car_inspection_files_service = CarInspectionFilesServiceImpl::new(pool.clone());
     let cam_files_service = CamFilesServiceImpl::new(pool.clone());
     let cam_file_exe_stage_service = CamFileExeStageServiceImpl::new(pool.clone());

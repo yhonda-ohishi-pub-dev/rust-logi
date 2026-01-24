@@ -6,6 +6,7 @@ pub struct Config {
     pub server_host: String,
     pub server_port: u16,
     pub gcs_bucket: Option<String>,
+    pub dtako_api_url: String,
 }
 
 impl Config {
@@ -20,6 +21,9 @@ impl Config {
                 .parse()
                 .unwrap_or(50051),
             gcs_bucket: env::var("GCS_BUCKET").ok(),
+            dtako_api_url: env::var("DTAKO_API_URL").unwrap_or_else(|_| {
+                "https://hono-api.mtamaramu.com/api/dtakologs/currentListAllHome".to_string()
+            }),
         })
     }
 

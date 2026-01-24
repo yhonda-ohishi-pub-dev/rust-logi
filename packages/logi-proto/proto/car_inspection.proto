@@ -26,6 +26,9 @@ service CarInspectionService {
 
   // 継続検査対象の車検証一覧
   rpc ListRenewTargets(logi.common.Empty) returns (ListCarInspectionsResponse);
+
+  // ホーム車両の継続検査対象一覧（外部API連携）
+  rpc ListRenewHomeTargets(ListRenewHomeTargetsRequest) returns (ListRenewHomeTargetsResponse);
 }
 
 // CarInspectionFiles Service - 車検証ファイル紐付け
@@ -252,4 +255,39 @@ message ListCarInspectionFilesRequest {
 message ListCarInspectionFilesResponse {
   repeated CarInspectionFile files = 1;
   optional logi.common.PaginationMeta pagination = 2;
+}
+
+// ホーム車両継続検査対象リクエスト
+message ListRenewHomeTargetsRequest {
+  optional string date = 1;  // YYYY-MM-DD format, defaults to today
+}
+
+// 関連データ付き車検証
+message CarInspectionWithRelations {
+  CarInspection car_inspection = 1;
+  optional CarInsSheetIchibanCar car_ins_sheet_ichiban_car = 2;
+  repeated CarInspectionFile car_inspection_files_a = 3;
+  repeated CarInspectionFile car_inspection_files_b = 4;
+}
+
+// 車検証シートイチバン車両マッピング
+message CarInsSheetIchibanCar {
+  optional string id_cars = 1;
+  string elect_cert_mg_no = 2;
+  string grantdate_e = 3;
+  string grantdate_y = 4;
+  string grantdate_m = 5;
+  string grantdate_d = 6;
+  optional DtakoCarsIchibanCar dtako_cars_ichiban_cars = 7;
+}
+
+// dtako車両イチバンマッピング
+message DtakoCarsIchibanCar {
+  string id_dtako = 1;
+  optional string id = 2;
+}
+
+// ホーム車両継続検査対象レスポンス
+message ListRenewHomeTargetsResponse {
+  repeated CarInspectionWithRelations car_inspections = 1;
 }
