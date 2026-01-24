@@ -439,6 +439,7 @@ impl DtakologsService for DtakologsServiceImpl {
             .await
             .map_err(|e| Status::internal(format!("Failed to set organization: {}", e)))?;
 
+        // Use TIMESTAMPTZ cast for proper timezone-aware comparison
         let dtakologs = if let Some(vehicle_cd) = req.vehicle_cd {
             sqlx::query_as::<_, DtakologModel>(
                 r#"
@@ -457,8 +458,8 @@ impl DtakologsService for DtakologsServiceImpl {
                     vehicle_icon_color, vehicle_icon_label_for_datetime,
                     vehicle_icon_label_for_driver, vehicle_icon_label_for_vehicle
                 FROM dtakologs
-                WHERE data_date_time >= $1
-                  AND data_date_time <= $2
+                WHERE data_date_time::timestamptz >= $1::timestamptz
+                  AND data_date_time::timestamptz <= $2::timestamptz
                   AND vehicle_cd = $3
                 ORDER BY data_date_time DESC
                 "#,
@@ -486,8 +487,8 @@ impl DtakologsService for DtakologsServiceImpl {
                     vehicle_icon_color, vehicle_icon_label_for_datetime,
                     vehicle_icon_label_for_driver, vehicle_icon_label_for_vehicle
                 FROM dtakologs
-                WHERE data_date_time >= $1
-                  AND data_date_time <= $2
+                WHERE data_date_time::timestamptz >= $1::timestamptz
+                  AND data_date_time::timestamptz <= $2::timestamptz
                 ORDER BY data_date_time DESC
                 "#,
             )
