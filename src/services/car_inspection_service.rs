@@ -4,6 +4,7 @@ use std::sync::Arc;
 use sqlx::PgPool;
 use tonic::{Request, Response, Status};
 
+use crate::db::{get_organization_from_request, set_current_organization};
 use crate::http_client::HttpClient;
 use crate::models::{CarInspectionFileModel, CarInspectionModel, CarInspectionWithRelationsModel, HomeCarEntry};
 use crate::proto::car_inspection::car_inspection_files_service_server::CarInspectionFilesService;
@@ -502,9 +503,14 @@ impl CarInspectionService for CarInspectionServiceImpl {
         &self,
         request: Request<ListRenewHomeTargetsRequest>,
     ) -> Result<Response<ListRenewHomeTargetsResponse>, Status> {
+        tracing::info!("ListRenewHomeTargets called");
+
+        // Extract organization_id from gRPC metadata before consuming request
+        let organization_id = get_organization_from_request(&request);
+        tracing::info!("organization_id: {}", organization_id);
         let req = request.into_inner();
 
-        // Parse date parameter or use today
+        // Parse date parameter or use today (no DB needed)
         let search_date = req.date.unwrap_or_else(|| {
             chrono::Utc::now().format("%Y-%m-%d").to_string()
         });
@@ -521,27 +527,55 @@ impl CarInspectionService for CarInspectionServiceImpl {
         } else {
             chrono::Utc::now().format("%y%m%d").to_string()
         };
+        tracing::info!("search_date_yymmdd: {}", search_date_yymmdd);
 
-        // Fetch home car list from external API
+        // Fetch home car list from external API BEFORE acquiring DB connection
+        // This minimizes the time between set_current_organization and query execution
         let home_cars: Vec<HomeCarEntry> = self
             .http_client
             .get_json(&self.dtako_api_url)
             .await
             .map_err(|e| Status::unavailable(format!("Failed to fetch home car list: {}", e)))?;
+        tracing::info!("home_cars count: {}", home_cars.len());
 
         // Create a set of home car VehicleCDs for fast lookup
         let home_vehicle_cds: HashSet<String> = home_cars
             .iter()
             .map(|c| c.vehicle_cd.to_string())
             .collect();
+        tracing::info!("home_vehicle_cds count: {}", home_vehicle_cds.len());
 
-        // Query car inspections with related data
+        // Acquire DB connection and set organization context
+        let mut conn = self.pool.acquire().await
+            .map_err(|e| Status::internal(format!("Database connection error: {}", e)))?;
+        set_current_organization(&mut conn, &organization_id).await
+            .map_err(|e| Status::internal(format!("Failed to set organization context: {}", e)))?;
+
+        // Verify organization context was set correctly
+        let verified_org: Option<String> = sqlx::query_scalar("SELECT get_current_organization()")
+            .fetch_one(&mut *conn)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to verify organization context: {}", e)))?;
+        tracing::info!("Verified organization context: {:?}", verified_org);
+
+        if verified_org.as_deref() != Some(&organization_id) {
+            tracing::error!(
+                "Organization context mismatch! Expected: {}, Got: {:?}",
+                organization_id,
+                verified_org
+            );
+            return Err(Status::internal(format!(
+                "Organization context not set correctly. Expected: {}, Got: {:?}",
+                organization_id, verified_org
+            )));
+        }
+
+        // Query car inspections with related data (immediately after context verification)
         // This query:
-        // 1. Filters out records with spaces in date fields
-        // 2. Gets latest record per CarId based on Grantdate
-        // 3. JOINs with car_ins_sheet_ichiban_cars_a and dtako_cars_ichiban_cars
-        // 4. Counts files in car_inspection_files_a and _b
-        // 5. Excludes records where expiration >= search date AND both files exist
+        // 1. Gets latest record per CarId based on Grantdate (handles spaces in date fields via regexp_replace)
+        // 2. JOINs with car_ins_sheet_ichiban_cars_a and dtako_cars_ichiban_cars
+        // 3. Counts files in car_inspection_files_a and _b
+        // 4. Excludes records where expiration >= search date AND both files exist
         let inspections = sqlx::query_as::<_, CarInspectionWithRelationsModel>(
             r#"
             WITH latest_inspections AS (
@@ -556,7 +590,6 @@ impl CarInspectionService for CarInspectionServiceImpl {
                     CAST(NULLIF(regexp_replace("GrantdateM", '[^0-9]', '', 'g'), '') AS INTEGER) * 100 +
                     CAST(NULLIF(regexp_replace("GrantdateD", '[^0-9]', '', 'g'), '') AS INTEGER) as grantdate_numeric
                 FROM car_inspection ci
-                WHERE NOT ("GrantdateY" LIKE '% %' OR "GrantdateM" LIKE '% %' OR "GrantdateD" LIKE '% %')
                 ORDER BY "CarId", grantdate_numeric DESC
             ),
             with_files AS (
@@ -697,9 +730,21 @@ impl CarInspectionService for CarInspectionServiceImpl {
             "#,
         )
         .bind(&search_date_yymmdd)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
+
+        tracing::info!("inspections count from DB: {}", inspections.len());
+
+        // Log sample of inspections for debugging
+        for (i, insp) in inspections.iter().take(5).enumerate() {
+            tracing::info!(
+                "inspection[{}]: cisa_id_cars={:?}, id_dtako={:?}",
+                i,
+                insp.cisa_id_cars,
+                insp.id_dtako
+            );
+        }
 
         // Filter to only include cars in home car list
         let filtered: Vec<CarInspectionWithRelations> = inspections
@@ -711,7 +756,13 @@ impl CarInspectionService for CarInspectionServiceImpl {
                 }
                 // Must have dtako mapping and be in home car list
                 match &i.id_dtako {
-                    Some(id_dtako) => home_vehicle_cds.contains(id_dtako),
+                    Some(id_dtako) => {
+                        let matched = home_vehicle_cds.contains(id_dtako);
+                        if matched {
+                            tracing::info!("Matched id_dtako: {}", id_dtako);
+                        }
+                        matched
+                    }
                     None => false,
                 }
             })
@@ -843,6 +894,8 @@ impl CarInspectionService for CarInspectionServiceImpl {
                 }
             })
             .collect();
+
+        tracing::info!("filtered count: {}", filtered.len());
 
         Ok(Response::new(ListRenewHomeTargetsResponse {
             car_inspections: filtered,
