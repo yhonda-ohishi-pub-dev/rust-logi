@@ -33,7 +33,7 @@ pub struct DtakologModel {
     pub setting_temp1: String,
     pub setting_temp3: String,
     pub setting_temp4: String,
-    pub speed: f64,
+    pub speed: f32,
     pub sub_driver_cd: i32,
     pub temp_state: i32,
     pub vehicle_name: String,
