@@ -6,8 +6,9 @@ use crate::models::DtakologModel;
 use crate::proto::common::Empty;
 use crate::proto::dtakologs::dtakologs_service_server::DtakologsService;
 use crate::proto::dtakologs::{
-    CreateDtakologRequest, CreateDtakologResponse, CurrentListSelectRequest, DeleteResponse,
-    Dtakolog, GetDateRequest, ListDtakologsResponse,
+    BulkCreateDtakologsRequest, BulkCreateDtakologsResponse, CreateDtakologRequest,
+    CreateDtakologResponse, CurrentListSelectRequest, DeleteResponse, Dtakolog, GetDateRequest,
+    ListDtakologsResponse,
 };
 
 pub struct DtakologsServiceImpl {
@@ -587,6 +588,231 @@ impl DtakologsService for DtakologsServiceImpl {
         Ok(Response::new(DeleteResponse {
             deleted_count,
             message: format!("Deleted {} dtakologs", deleted_count),
+        }))
+    }
+
+    /// 運行ログ一括作成 (browser-render-rust用)
+    async fn bulk_create(
+        &self,
+        request: Request<BulkCreateDtakologsRequest>,
+    ) -> Result<Response<BulkCreateDtakologsResponse>, Status> {
+        let organization_id = get_organization_from_request(&request);
+        let req = request.into_inner();
+        let total_records = req.dtakologs.len() as i32;
+
+        tracing::info!(
+            "BulkCreate called for organization: {}, records: {}",
+            organization_id,
+            total_records
+        );
+
+        if req.dtakologs.is_empty() {
+            return Ok(Response::new(BulkCreateDtakologsResponse {
+                success: true,
+                records_added: 0,
+                total_records: 0,
+                message: "No records to insert".to_string(),
+            }));
+        }
+
+        let mut conn = self
+            .pool
+            .acquire()
+            .await
+            .map_err(|e| Status::internal(format!("Failed to acquire connection: {}", e)))?;
+
+        set_current_organization(&mut conn, &organization_id)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to set organization: {}", e)))?;
+
+        let mut records_added = 0;
+        let mut errors = Vec::new();
+
+        for dtakolog in req.dtakologs {
+            let result = sqlx::query(
+                r#"
+                INSERT INTO dtakologs (
+                    organization_id, data_date_time, vehicle_cd, type,
+                    all_state_font_color_index, all_state_ryout_color, branch_cd, branch_name,
+                    current_work_cd, data_filter_type, disp_flag, driver_cd,
+                    gps_direction, gps_enable, gps_latitude, gps_longitude, gps_satellite_num,
+                    operation_state, recive_event_type, recive_packet_type, recive_work_cd, revo,
+                    setting_temp, setting_temp1, setting_temp3, setting_temp4, speed,
+                    sub_driver_cd, temp_state, vehicle_name,
+                    address_disp_c, address_disp_p, all_state, all_state_ex, all_state_font_color,
+                    comu_date_time, current_work_name, driver_name, event_val, gps_lati_and_long,
+                    odometer, recive_type_color_name, recive_type_name, start_work_date_time,
+                    state, state1, state2, state3, state_flag,
+                    temp1, temp2, temp3, temp4,
+                    vehicle_icon_color, vehicle_icon_label_for_datetime,
+                    vehicle_icon_label_for_driver, vehicle_icon_label_for_vehicle
+                ) VALUES (
+                    $1::uuid, $2, $3, $4,
+                    $5, $6, $7, $8,
+                    $9, $10, $11, $12,
+                    $13, $14, $15, $16, $17,
+                    $18, $19, $20, $21, $22,
+                    $23, $24, $25, $26, $27,
+                    $28, $29, $30,
+                    $31, $32, $33, $34, $35,
+                    $36, $37, $38, $39, $40,
+                    $41, $42, $43, $44,
+                    $45, $46, $47, $48, $49,
+                    $50, $51, $52, $53,
+                    $54, $55, $56, $57
+                )
+                ON CONFLICT (organization_id, data_date_time, vehicle_cd) DO UPDATE SET
+                    type = EXCLUDED.type,
+                    all_state_font_color_index = EXCLUDED.all_state_font_color_index,
+                    all_state_ryout_color = EXCLUDED.all_state_ryout_color,
+                    branch_cd = EXCLUDED.branch_cd,
+                    branch_name = EXCLUDED.branch_name,
+                    current_work_cd = EXCLUDED.current_work_cd,
+                    data_filter_type = EXCLUDED.data_filter_type,
+                    disp_flag = EXCLUDED.disp_flag,
+                    driver_cd = EXCLUDED.driver_cd,
+                    gps_direction = EXCLUDED.gps_direction,
+                    gps_enable = EXCLUDED.gps_enable,
+                    gps_latitude = EXCLUDED.gps_latitude,
+                    gps_longitude = EXCLUDED.gps_longitude,
+                    gps_satellite_num = EXCLUDED.gps_satellite_num,
+                    operation_state = EXCLUDED.operation_state,
+                    recive_event_type = EXCLUDED.recive_event_type,
+                    recive_packet_type = EXCLUDED.recive_packet_type,
+                    recive_work_cd = EXCLUDED.recive_work_cd,
+                    revo = EXCLUDED.revo,
+                    setting_temp = EXCLUDED.setting_temp,
+                    setting_temp1 = EXCLUDED.setting_temp1,
+                    setting_temp3 = EXCLUDED.setting_temp3,
+                    setting_temp4 = EXCLUDED.setting_temp4,
+                    speed = EXCLUDED.speed,
+                    sub_driver_cd = EXCLUDED.sub_driver_cd,
+                    temp_state = EXCLUDED.temp_state,
+                    vehicle_name = EXCLUDED.vehicle_name,
+                    address_disp_c = EXCLUDED.address_disp_c,
+                    address_disp_p = EXCLUDED.address_disp_p,
+                    all_state = EXCLUDED.all_state,
+                    all_state_ex = EXCLUDED.all_state_ex,
+                    all_state_font_color = EXCLUDED.all_state_font_color,
+                    comu_date_time = EXCLUDED.comu_date_time,
+                    current_work_name = EXCLUDED.current_work_name,
+                    driver_name = EXCLUDED.driver_name,
+                    event_val = EXCLUDED.event_val,
+                    gps_lati_and_long = EXCLUDED.gps_lati_and_long,
+                    odometer = EXCLUDED.odometer,
+                    recive_type_color_name = EXCLUDED.recive_type_color_name,
+                    recive_type_name = EXCLUDED.recive_type_name,
+                    start_work_date_time = EXCLUDED.start_work_date_time,
+                    state = EXCLUDED.state,
+                    state1 = EXCLUDED.state1,
+                    state2 = EXCLUDED.state2,
+                    state3 = EXCLUDED.state3,
+                    state_flag = EXCLUDED.state_flag,
+                    temp1 = EXCLUDED.temp1,
+                    temp2 = EXCLUDED.temp2,
+                    temp3 = EXCLUDED.temp3,
+                    temp4 = EXCLUDED.temp4,
+                    vehicle_icon_color = EXCLUDED.vehicle_icon_color,
+                    vehicle_icon_label_for_datetime = EXCLUDED.vehicle_icon_label_for_datetime,
+                    vehicle_icon_label_for_driver = EXCLUDED.vehicle_icon_label_for_driver,
+                    vehicle_icon_label_for_vehicle = EXCLUDED.vehicle_icon_label_for_vehicle
+                "#,
+            )
+            .bind(&organization_id)
+            .bind(&dtakolog.data_date_time)
+            .bind(dtakolog.vehicle_cd)
+            .bind(&dtakolog.r#type)
+            .bind(dtakolog.all_state_font_color_index)
+            .bind(&dtakolog.all_state_ryout_color)
+            .bind(dtakolog.branch_cd)
+            .bind(&dtakolog.branch_name)
+            .bind(dtakolog.current_work_cd)
+            .bind(dtakolog.data_filter_type)
+            .bind(dtakolog.disp_flag)
+            .bind(dtakolog.driver_cd)
+            .bind(dtakolog.gps_direction)
+            .bind(dtakolog.gps_enable)
+            .bind(dtakolog.gps_latitude)
+            .bind(dtakolog.gps_longitude)
+            .bind(dtakolog.gps_satellite_num)
+            .bind(dtakolog.operation_state)
+            .bind(dtakolog.recive_event_type)
+            .bind(dtakolog.recive_packet_type)
+            .bind(dtakolog.recive_work_cd)
+            .bind(dtakolog.revo)
+            .bind(&dtakolog.setting_temp)
+            .bind(&dtakolog.setting_temp1)
+            .bind(&dtakolog.setting_temp3)
+            .bind(&dtakolog.setting_temp4)
+            .bind(dtakolog.speed)
+            .bind(dtakolog.sub_driver_cd)
+            .bind(dtakolog.temp_state)
+            .bind(&dtakolog.vehicle_name)
+            .bind(&dtakolog.address_disp_c)
+            .bind(&dtakolog.address_disp_p)
+            .bind(&dtakolog.all_state)
+            .bind(&dtakolog.all_state_ex)
+            .bind(&dtakolog.all_state_font_color)
+            .bind(&dtakolog.comu_date_time)
+            .bind(&dtakolog.current_work_name)
+            .bind(&dtakolog.driver_name)
+            .bind(&dtakolog.event_val)
+            .bind(&dtakolog.gps_lati_and_long)
+            .bind(&dtakolog.odometer)
+            .bind(&dtakolog.recive_type_color_name)
+            .bind(&dtakolog.recive_type_name)
+            .bind(&dtakolog.start_work_date_time)
+            .bind(&dtakolog.state)
+            .bind(&dtakolog.state1)
+            .bind(&dtakolog.state2)
+            .bind(&dtakolog.state3)
+            .bind(&dtakolog.state_flag)
+            .bind(&dtakolog.temp1)
+            .bind(&dtakolog.temp2)
+            .bind(&dtakolog.temp3)
+            .bind(&dtakolog.temp4)
+            .bind(&dtakolog.vehicle_icon_color)
+            .bind(&dtakolog.vehicle_icon_label_for_datetime)
+            .bind(&dtakolog.vehicle_icon_label_for_driver)
+            .bind(&dtakolog.vehicle_icon_label_for_vehicle)
+            .execute(&mut *conn)
+            .await;
+
+            match result {
+                Ok(_) => records_added += 1,
+                Err(e) => {
+                    errors.push(format!(
+                        "vehicle_cd={}, date={}: {}",
+                        dtakolog.vehicle_cd, dtakolog.data_date_time, e
+                    ));
+                }
+            }
+        }
+
+        let success = errors.is_empty();
+        let message = if success {
+            format!("Successfully inserted {} records", records_added)
+        } else {
+            format!(
+                "Inserted {} records with {} errors: {:?}",
+                records_added,
+                errors.len(),
+                errors
+            )
+        };
+
+        tracing::info!(
+            "BulkCreate completed: success={}, records_added={}, total_records={}",
+            success,
+            records_added,
+            total_records
+        );
+
+        Ok(Response::new(BulkCreateDtakologsResponse {
+            success,
+            records_added,
+            total_records,
+            message,
         }))
     }
 }

@@ -24,6 +24,9 @@ service DtakologsService {
   // 運行ログ作成
   rpc Create(CreateDtakologRequest) returns (CreateDtakologResponse);
 
+  // 運行ログ一括作成 (browser-render-rust用)
+  rpc BulkCreate(BulkCreateDtakologsRequest) returns (BulkCreateDtakologsResponse);
+
   // 全運行ログ削除
   rpc DeleteAll(logi.common.Empty) returns (DeleteResponse);
 }
@@ -121,4 +124,17 @@ message CreateDtakologResponse {
 message DeleteResponse {
   int32 deleted_count = 1;
   string message = 2;
+}
+
+// 一括作成リクエスト (browser-render-rust用)
+message BulkCreateDtakologsRequest {
+  repeated Dtakolog dtakologs = 1;
+}
+
+// 一括作成レスポンス
+message BulkCreateDtakologsResponse {
+  bool success = 1;
+  int32 records_added = 2;
+  int32 total_records = 3;
+  string message = 4;
 }
