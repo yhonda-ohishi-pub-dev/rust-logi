@@ -21,7 +21,7 @@ gcloud run deploy $SERVICE_NAME \
   --no-allow-unauthenticated \
   --add-cloudsql-instances cloudsql-sv:asia-northeast1:postgres-prod \
   --set-secrets "DATABASE_URL=rust-logi-database-url:latest" \
-  --set-env-vars "SERVER_PORT=8080,GCS_BUCKET=rust-logi-files" \
+  --set-env-vars "SERVER_PORT=8080,GCS_BUCKET=rust-logi-files,DVR_NOTIFICATION_ENABLED=true,DVR_LINEWORKS_BOT_URL=https://lineworks-bot-rust-566bls5vfq-an.a.run.app" \
   --port 8080
 
 echo "=== Deploy complete ==="
