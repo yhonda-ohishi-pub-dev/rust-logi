@@ -7,6 +7,8 @@ pub struct Config {
     pub server_port: u16,
     pub gcs_bucket: Option<String>,
     pub dtako_api_url: String,
+    pub dvr_notification_enabled: bool,
+    pub dvr_lineworks_bot_url: Option<String>,
 }
 
 impl Config {
@@ -25,6 +27,11 @@ impl Config {
             dtako_api_url: env::var("DTAKO_API_URL").unwrap_or_else(|_| {
                 "https://hono-api.mtamaramu.com/api/dtakologs/currentListAllHome".to_string()
             }),
+            dvr_notification_enabled: env::var("DVR_NOTIFICATION_ENABLED")
+                .unwrap_or_else(|_| "false".to_string())
+                .parse()
+                .unwrap_or(false),
+            dvr_lineworks_bot_url: env::var("DVR_LINEWORKS_BOT_URL").ok(),
         })
     }
 

@@ -16,6 +16,7 @@ src/proto/*.rs
 
 # Cloned reference repository
 hono-logi/
+lineworks-bot-rust_ref/
 
 # Cloud SQL Proxy binary
 cloud-sql-proxy
@@ -29,3 +30,5 @@ cloud-sql-proxy
 packages/*/node_modules/
 packages/*/dist/
 packages/*/src/gen/
+.claude/skills
+tools

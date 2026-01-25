@@ -47,6 +47,7 @@ source .env && sqlx migrate run
   - `car-inspection-date-fields.md` - 車検証日付フィールドの仕様（スペース含む値の扱い）
 - `convert_and_import.py` - hono-logiからのデータ移行スクリプト
 - `.env` - 環境変数 (DATABASE_URL等)
+- `hono-api-test_ref/` - 参照用: hono-api-test リポジトリ (https://github.com/yhonda-ohishi/hono-api-test.git)
 
 ## データ移行 (convert_and_import.py)
 
@@ -130,3 +131,75 @@ const client = createClient(FilesService, transport);
 | GCS Coldline | $0.004/GB/月 |
 
 PDFなどの大きいファイルはGCSに保存することでコスト削減。
+
+## 現在の作業: DVR Notifications 機能 (完了)
+
+### 背景
+browser-render から DVR 通知データを受け取り、PostgreSQL に保存し、LINE WORKS に通知を送る機能。
+
+### 完了
+- [x] `packages/logi-proto/proto/dvr_notifications.proto` 作成（BulkCreate RPC）
+- [x] `migrations/00015_create_dvr_notifications.sql` 作成・適用
+- [x] `src/services/dvr_notifications_service.rs` 実装（mp4_url重複チェック + LINE通知）
+- [x] `src/config.rs` に DVR 環境変数追加
+- [x] `.env` に DVR 環境変数追加
+- [x] rust-logi を Cloud Run にデプロイ
+
+### 環境変数
+```bash
+DVR_NOTIFICATION_ENABLED=true
+DVR_LINEWORKS_BOT_URL=https://lineworks-bot-rust-566bls5vfq-an.a.run.app
+```
+
+### デプロイ済みURL
+- rust-logi: `https://rust-logi-747065218280.asia-northeast1.run.app`
+- lineworks-bot-rust: `https://lineworks-bot-rust-566bls5vfq-an.a.run.app`
+
+### 関連ファイル
+- `packages/logi-proto/proto/dvr_notifications.proto` - Proto定義
+- `src/services/dvr_notifications_service.rs` - サービス実装
+- `src/models/dvr_notification.rs` - モデル
+- `migrations/00015_create_dvr_notifications.sql` - マイグレーション
+- `lineworks-bot-rust_ref/` - LINE WORKS Bot参照
+
+---
+
+## 次の作業: browser-render-rust → rust-logi DVR通知連携
+
+### 未完了
+1. **browser-render-rust に DVR通知 gRPC クライアント追加** - rust-logi の DvrNotificationsService.BulkCreate を呼び出す
+2. **browser-render-rust のビルド・テスト**
+3. **browser-render-rust のデプロイ（GCE）**
+
+### 次のアクション
+```bash
+# browser-render-rust_ref でDVR通知クライアント実装
+# 1. build.rs に dvr_notifications.proto 追加
+# 2. renderer.rs に send_dvr_to_rust_logi メソッド追加
+# 3. DVRイベント発生時に呼び出し
+
+cd browser-render-rust_ref && cargo build --features grpc
+```
+
+---
+
+## 過去の作業: browser-render-rust → rust-logi Dtakologs統合 (完了)
+
+### 完了
+- [x] Phase 1: `packages/logi-proto/proto/dtakologs.proto`に`BulkCreate` RPC追加
+- [x] Phase 1: `src/services/dtakologs_service.rs`に`bulk_create`実装
+- [x] Phase 2: `browser-render-rust_ref/build.rs`にlogiプロトコンパイル追加
+- [x] Phase 2: `browser-render-rust_ref/src/lib.rs`にlogiモジュール追加
+- [x] Phase 2: `browser-render-rust_ref/src/config.rs`に`rust_logi_url`, `rust_logi_organization_id`追加
+- [x] Phase 2: `browser-render-rust_ref/src/browser/renderer.rs`に`send_to_rust_logi`メソッド追加
+
+### 参照リポジトリ
+- `browser-render-rust_ref/` - https://github.com/yhonda-ohishi-pub-dev/browser-render-rust.git
+- `browser_render_go_ref/` - https://github.com/yhonda-ohishi/browser_render_go.git
+- `hono-api-test_ref/` - https://github.com/yhonda-ohishi/hono-api-test.git
+- `lineworks-bot-rust_ref/` - https://github.com/yhonda-ohishi-pub-dev/lineworks-bot-rust.git
+
+### 注意事項
+- `RUST_LOGI_URL`と`RUST_LOGI_ORGANIZATION_ID`は必須（デフォルト値なし）
+- browser-render-rustはGCEのまま運用（Chrome安定性のため）
+- grpc featureが必要（`--features grpc`）

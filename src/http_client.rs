@@ -20,6 +20,14 @@ impl HttpClient {
     pub async fn get_json<T: DeserializeOwned>(&self, url: &str) -> Result<T, reqwest::Error> {
         self.client.get(url).send().await?.json().await
     }
+
+    pub async fn post_json<T: serde::Serialize>(
+        &self,
+        url: &str,
+        body: &T,
+    ) -> Result<reqwest::Response, reqwest::Error> {
+        self.client.post(url).json(body).send().await
+    }
 }
 
 impl Default for HttpClient {

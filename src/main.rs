@@ -12,10 +12,12 @@ use rust_logi::proto::files::files_service_server::FilesServiceServer;
 use rust_logi::proto::health::health_server::HealthServer;
 use rust_logi::proto::dtakologs::dtakologs_service_server::DtakologsServiceServer;
 use rust_logi::proto::flickr::flickr_service_server::FlickrServiceServer;
+use rust_logi::proto::dvr_notifications::dvr_notifications_service_server::DvrNotificationsServiceServer;
 use rust_logi::services::cam_files_service::CamFileExeStageServiceImpl;
 use rust_logi::services::{
     CamFilesServiceImpl, CarInspectionFilesServiceImpl, CarInspectionServiceImpl,
     FilesServiceImpl, HealthServiceImpl, DtakologsServiceImpl, FlickrServiceImpl,
+    DvrNotificationsServiceImpl,
 };
 use rust_logi::storage::GcsClient;
 
@@ -79,6 +81,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let health_service = HealthServiceImpl::new();
     let dtakologs_service = DtakologsServiceImpl::new(pool.clone());
     let flickr_service = FlickrServiceImpl::new(pool.clone());
+    let dvr_notifications_service = DvrNotificationsServiceImpl::new(
+        pool.clone(),
+        config.clone(),
+        http_client.clone(),
+    );
 
     // CORS layer for gRPC-Web
     let cors = CorsLayer::new()
@@ -112,6 +119,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(HealthServer::new(health_service))
         .add_service(DtakologsServiceServer::new(dtakologs_service))
         .add_service(FlickrServiceServer::new(flickr_service))
+        .add_service(DvrNotificationsServiceServer::new(dvr_notifications_service))
         .serve(addr)
         .await?;
 

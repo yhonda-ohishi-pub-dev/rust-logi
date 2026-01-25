@@ -28,3 +28,7 @@ pub mod dtakologs {
 pub mod flickr {
     include!("logi.flickr.rs");
 }
+
+pub mod dvr_notifications {
+    include!("logi.dvr_notifications.rs");
+}

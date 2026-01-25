@@ -27,6 +27,8 @@ IMPORT_ORDER = [
     "car_inspection_deregistration",
     "car_inspection_deregistration_files",
     "ichiban_cars",
+    "dtako_cars_ichiban_cars",      # ichiban_cars.idを参照
+    "car_ins_sheet_ichiban_cars_a", # dtako_cars_ichiban_cars.idを参照
     "kudguri",  # Parent table - must be first
     "kudgcst",
     "kudgfry",
@@ -46,9 +48,7 @@ SKIP_TABLES = {
     "public.cam_file_exe",
     "public.cam_file_exe_stage",
     "public.flickr_photo",
-    "public.dtako_cars_ichiban_cars",
     "public.car_ins_sheet_ichiban_cars",
-    "public.car_ins_sheet_ichiban_cars_a",
     "public.car_inspection_files_a",
     "public.car_inspection_files_b",
 }
