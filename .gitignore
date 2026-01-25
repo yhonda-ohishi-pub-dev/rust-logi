@@ -30,5 +30,6 @@ cloud-sql-proxy
 packages/*/node_modules/
 packages/*/dist/
 packages/*/src/gen/
+test/node_modules/
 .claude/skills
 tools
