@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use sqlx::PgPool;
 use tonic::{Request, Response, Status};
+use uuid::Uuid;
 
 use crate::config::Config;
 use crate::db::{get_organization_from_request, set_current_organization};
@@ -9,20 +10,29 @@ use crate::http_client::HttpClient;
 use crate::proto::dvr_notifications::dvr_notifications_service_server::DvrNotificationsService;
 use crate::proto::dvr_notifications::{
     BulkCreateDvrNotificationsRequest, BulkCreateDvrNotificationsResponse, DvrNotification,
+    RetryPendingDownloadsRequest, RetryPendingDownloadsResponse,
 };
+use crate::storage::GcsClient;
 
 pub struct DvrNotificationsServiceImpl {
     pool: PgPool,
     config: Config,
     http_client: Arc<HttpClient>,
+    gcs_client: Option<Arc<GcsClient>>,
 }
 
 impl DvrNotificationsServiceImpl {
-    pub fn new(pool: PgPool, config: Config, http_client: Arc<HttpClient>) -> Self {
+    pub fn new(
+        pool: PgPool,
+        config: Config,
+        http_client: Arc<HttpClient>,
+        gcs_client: Option<Arc<GcsClient>>,
+    ) -> Self {
         Self {
             pool,
             config,
             http_client,
+            gcs_client,
         }
     }
 
@@ -95,6 +105,97 @@ impl DvrNotificationsServiceImpl {
 
         Ok(result.is_some())
     }
+
+    /// Spawn background task to download mp4 and store to GCS
+    fn spawn_mp4_download(&self, mp4_url: String, organization_id: String) {
+        let Some(gcs_client) = self.gcs_client.clone() else {
+            tracing::debug!("GCS client not configured, skipping mp4 download");
+            return;
+        };
+
+        let pool = self.pool.clone();
+        let http_client = self.http_client.clone();
+
+        tokio::spawn(async move {
+            if let Err(e) = download_and_store_mp4(
+                pool,
+                gcs_client,
+                http_client,
+                mp4_url.clone(),
+                organization_id,
+            )
+            .await
+            {
+                tracing::warn!("Failed to download/store mp4 {}: {}", mp4_url, e);
+            }
+        });
+    }
+}
+
+/// Download mp4 from external URL and store to GCS
+async fn download_and_store_mp4(
+    pool: PgPool,
+    gcs_client: Arc<GcsClient>,
+    http_client: Arc<HttpClient>,
+    mp4_url: String,
+    organization_id: String,
+) -> Result<(), String> {
+    tracing::info!("Starting mp4 download: {}", mp4_url);
+
+    // 1. Download mp4 from external URL
+    let response = http_client
+        .get(&mp4_url)
+        .await
+        .map_err(|e| format!("HTTP request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("HTTP error: {}", response.status()));
+    }
+
+    let data = response
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to read response body: {}", e))?;
+
+    let file_size = data.len() as i64;
+    tracing::info!("Downloaded mp4: {} bytes from {}", file_size, mp4_url);
+
+    // 2. Generate GCS key: {org_id}/dvr/{uuid}.mp4
+    let uuid = Uuid::new_v4();
+    let gcs_key = format!("{}/dvr/{}.mp4", organization_id, uuid);
+
+    // 3. Upload to GCS
+    gcs_client
+        .upload(&gcs_key, &data, "video/mp4")
+        .await
+        .map_err(|e| format!("GCS upload failed: {}", e))?;
+
+    tracing::info!("Uploaded to GCS: {}", gcs_key);
+
+    // 4. Update DB with gcs_key, file_size, and status
+    sqlx::query(
+        r#"
+        UPDATE dvr_notifications
+        SET gcs_key = $1, file_size_bytes = $2, download_status = 'completed'
+        WHERE organization_id = $3::uuid AND mp4_url = $4
+        "#,
+    )
+    .bind(&gcs_key)
+    .bind(file_size)
+    .bind(&organization_id)
+    .bind(&mp4_url)
+    .execute(&pool)
+    .await
+    .map_err(|e| format!("DB update failed: {}", e))?;
+
+    tracing::info!(
+        "DVR mp4 stored: mp4_url={}, gcs_key={}, size={}",
+        mp4_url,
+        gcs_key,
+        file_size
+    );
+
+    Ok(())
 }
 
 #[tonic::async_trait]
@@ -185,6 +286,12 @@ impl DvrNotificationsService for DvrNotificationsServiceImpl {
                     if let Err(e) = self.send_line_notification(&notification).await {
                         tracing::warn!("LINE notification failed but record was saved: {}", e);
                     }
+
+                    // Spawn background task to download mp4 and store to GCS
+                    self.spawn_mp4_download(
+                        notification.mp4_url.clone(),
+                        organization_id.clone(),
+                    );
                 }
                 Err(e) => {
                     let error_msg = format!("mp4_url={}: {}", notification.mp4_url, e);
@@ -214,6 +321,65 @@ impl DvrNotificationsService for DvrNotificationsServiceImpl {
             records_added,
             total_records,
             message,
+        }))
+    }
+
+    /// ペンディング状態のmp4ダウンロードを再試行
+    async fn retry_pending_downloads(
+        &self,
+        request: Request<RetryPendingDownloadsRequest>,
+    ) -> Result<Response<RetryPendingDownloadsResponse>, Status> {
+        let organization_id = get_organization_from_request(&request);
+
+        tracing::info!(
+            "RetryPendingDownloads called for organization: {}",
+            organization_id
+        );
+
+        // Check if GCS client is configured
+        if self.gcs_client.is_none() {
+            return Ok(Response::new(RetryPendingDownloadsResponse {
+                success: false,
+                pending_count: 0,
+                message: "GCS client not configured".to_string(),
+            }));
+        }
+
+        // Fetch all pending records for this organization
+        let pending_records: Vec<(String, String)> = sqlx::query_as(
+            r#"
+            SELECT mp4_url, organization_id::text
+            FROM dvr_notifications
+            WHERE organization_id = $1::uuid
+              AND (download_status = 'pending' OR download_status IS NULL)
+              AND mp4_url NOT LIKE 'https://example.com%'
+            "#,
+        )
+        .bind(&organization_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Status::internal(format!("Failed to fetch pending records: {}", e)))?;
+
+        let pending_count = pending_records.len() as i32;
+
+        if pending_count == 0 {
+            return Ok(Response::new(RetryPendingDownloadsResponse {
+                success: true,
+                pending_count: 0,
+                message: "No pending downloads found".to_string(),
+            }));
+        }
+
+        // Spawn download tasks for each pending record
+        for (mp4_url, org_id) in pending_records {
+            tracing::info!("Spawning download for pending mp4: {}", mp4_url);
+            self.spawn_mp4_download(mp4_url, org_id);
+        }
+
+        Ok(Response::new(RetryPendingDownloadsResponse {
+            success: true,
+            pending_count,
+            message: format!("Started {} pending downloads", pending_count),
         }))
     }
 }

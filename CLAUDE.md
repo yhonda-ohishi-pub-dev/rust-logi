@@ -164,22 +164,52 @@ DVR_LINEWORKS_BOT_URL=https://lineworks-bot-rust-566bls5vfq-an.a.run.app
 
 ---
 
-## 次の作業: browser-render-rust → rust-logi DVR通知連携
+## 次の作業: DVR通知 mp4 → GCS 保存機能
 
-### 未完了
-1. **browser-render-rust に DVR通知 gRPC クライアント追加** - rust-logi の DvrNotificationsService.BulkCreate を呼び出す
-2. **browser-render-rust のビルド・テスト**
-3. **browser-render-rust のデプロイ（GCE）**
+### 概要
+DVR通知受信時にmp4ファイルを外部URLからダウンロードし、GCSに保存する。
 
-### 次のアクション
-```bash
-# browser-render-rust_ref でDVR通知クライアント実装
-# 1. build.rs に dvr_notifications.proto 追加
-# 2. renderer.rs に send_dvr_to_rust_logi メソッド追加
-# 3. DVRイベント発生時に呼び出し
+### 計画書
+`/home/yhonda/.claude/plans/keen-gliding-catmull.md`
 
-cd browser-render-rust_ref && cargo build --features grpc
+### 実装予定
+1. **マイグレーション作成**: `migrations/00016_add_dvr_mp4_storage.sql`
+   - `gcs_key TEXT`
+   - `file_size_bytes BIGINT`
+   - `download_status VARCHAR(20) DEFAULT 'pending'`
+
+2. **DVR通知サービス拡張**: `src/services/dvr_notifications_service.rs`
+   - `download_and_store_mp4()` 追加
+   - `bulk_create` 内で `tokio::spawn` で非同期ダウンロード
+
+3. **モデル更新**: `src/models/dvr_notification.rs`
+   - 新カラム追加
+
+### データフロー
 ```
+DVR通知受信 → DB保存(pending) → LINE通知 → tokio::spawn
+                                              ↓
+                                    mp4ダウンロード(HTTP)
+                                              ↓
+                                    GCSアップロード
+                                              ↓
+                                    DB更新(completed)
+```
+
+### GCS保存パス
+`gs://rust-logi-files/{org_id}/dvr/{uuid}.mp4`
+
+---
+
+## 完了: browser-render-rust → rust-logi Dtakologs統合
+
+### commit
+`467c6db` - Add rust-logi gRPC integration for direct PostgreSQL data insertion
+
+### 確認済み
+- [x] DVR通知 5件登録済み（堺100あ5850 急加速など）
+- [x] GCS 2,714ファイル / 128.48 MiB
+- [x] DB files テーブル 2,714件（GCSと一致）
 
 ---
 

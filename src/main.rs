@@ -69,7 +69,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let http_client = Arc::new(HttpClient::new());
 
     // Create services
-    let files_service = FilesServiceImpl::new(pool.clone(), gcs_client);
+    let files_service = FilesServiceImpl::new(pool.clone(), gcs_client.clone());
     let car_inspection_service = CarInspectionServiceImpl::new(
         pool.clone(),
         http_client.clone(),
@@ -85,6 +85,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         pool.clone(),
         config.clone(),
         http_client.clone(),
+        gcs_client.clone(),
     );
 
     // CORS layer for gRPC-Web

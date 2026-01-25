@@ -11,6 +11,9 @@ pub struct DvrNotificationModel {
     pub event_type: String,
     pub dvr_datetime: String,
     pub driver_name: String,
+    pub gcs_key: Option<String>,
+    pub file_size_bytes: Option<i64>,
+    pub download_status: Option<String>,
 }
 
 impl DvrNotificationModel {

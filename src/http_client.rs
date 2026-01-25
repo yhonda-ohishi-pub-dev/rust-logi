@@ -21,6 +21,10 @@ impl HttpClient {
         self.client.get(url).send().await?.json().await
     }
 
+    pub async fn get(&self, url: &str) -> Result<reqwest::Response, reqwest::Error> {
+        self.client.get(url).send().await
+    }
+
     pub async fn post_json<T: serde::Serialize>(
         &self,
         url: &str,

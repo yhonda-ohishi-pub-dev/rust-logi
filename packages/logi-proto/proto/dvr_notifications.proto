@@ -7,6 +7,8 @@ import "common.proto";
 service DvrNotificationsService {
   // DVR通知一括作成
   rpc BulkCreate(BulkCreateDvrNotificationsRequest) returns (BulkCreateDvrNotificationsResponse);
+  // ペンディング状態のmp4ダウンロードを再試行
+  rpc RetryPendingDownloads(RetryPendingDownloadsRequest) returns (RetryPendingDownloadsResponse);
 }
 
 message DvrNotification {
@@ -29,4 +31,14 @@ message BulkCreateDvrNotificationsResponse {
   int32 records_added = 2;   // 新規追加数
   int32 total_records = 3;   // 受信総数
   string message = 4;
+}
+
+message RetryPendingDownloadsRequest {
+  // 空: 全ペンディングを処理
+}
+
+message RetryPendingDownloadsResponse {
+  bool success = 1;
+  int32 pending_count = 2;   // 処理開始した件数
+  string message = 3;
 }
