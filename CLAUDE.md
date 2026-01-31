@@ -39,7 +39,7 @@ source .env && sqlx migrate run
 
 ## プロジェクト構成
 
-- `migrations/` - PostgreSQLマイグレーション (00001-00008)
+- `migrations/` - PostgreSQLマイグレーション (00001-00018)
 - `src/db/organization.rs` - RLSヘルパー関数 (`set_current_organization`, `get_current_organization`)
 - `src/storage/mod.rs` - GCSクライアント
 - `packages/logi-proto/` - npmパッケージ（proto + 生成済みTypeScript）
@@ -48,6 +48,8 @@ source .env && sqlx migrate run
 - `convert_and_import.py` - hono-logiからのデータ移行スクリプト
 - `.env` - 環境変数 (DATABASE_URL等)
 - `hono-api-test_ref/` - 参照用: hono-api-test リポジトリ (https://github.com/yhonda-ohishi/hono-api-test.git)
+- `hono-logi/` - 参照用: 元のhono-logi実装（Cloudflare Workers版）
+- `nuxt-pwa-carins_ref/` - 参照用: フロントエンド (symlink → /home/yhonda/js/nuxt-pwa-carins)
 
 ## データ移行 (convert_and_import.py)
 
@@ -132,7 +134,125 @@ const client = createClient(FilesService, transport);
 
 PDFなどの大きいファイルはGCSに保存することでコスト削減。
 
-## 現在の作業: DVR Notifications 機能 (完了)
+## 進行中: PDF/JSON紐づき修正 — organization_id不整合 + uuid型バグ
+
+### 原因（特定済み）
+データが2つのorganization_idに分裂していた：
+- `00000000-0000-0000-0000-000000000001` (Default) — dtakologs, kudg系, car_inspection等
+- `01926fa0-20fe-70bd-8b60-9d268f28a987` (Temporary) — files系テーブルのみ
+
+アプリはデフォルト`00000000-...0001`を使うため、車検証は見えるがファイル紐づきが0件だった。
+
+### 完了（DB修正）
+- [x] ファイル系4テーブルのorganization_idを `00000000-...0001` に統一
+  - files: 2,714件 UPDATE済み
+  - car_inspection_files_a: 1,380件 UPDATE済み
+  - car_inspection_files_b: 710件 UPDATE済み
+  - car_inspection_files: 667件 UPDATE済み
+- [x] car_inspection の重複レコード削除（`01926fa0-...a987` の205件）
+- [x] ichiban_cars の重複レコード削除（`01926fa0-...a987` の509件）
+- [x] Temporary Organization レコード削除
+
+### 完了（コード修正・未デプロイ）
+- [x] `CarInspectionFileModel.uuid` の型を `String` → `uuid::Uuid` に修正
+  - `src/models/car_inspection_files.rs:6` — `pub uuid: uuid::Uuid,`
+  - `src/services/car_inspection_service.rs:982` — `uuid: model.uuid.to_string(),`
+  - DBのuuidカラムはUUID型だがRustでStringとして読んでいた（RLSで0件だったので顕在化せず）
+- [x] `cargo build --release` 成功確認済み
+
+### 未完了
+1. **Cloud Runにデプロイ** — uuid型バグ修正を反映するため必須
+   ```bash
+   # デプロイスクリプト使用
+   ./deploy.sh
+   ```
+2. **API検証** — デプロイ後に以下を確認:
+   ```bash
+   TOKEN=$(gcloud auth print-identity-token)
+   # pdf_uuid / json_uuid が返ることを確認
+   grpcurl -H "Authorization: Bearer $TOKEN" \
+     -H "x-organization-id: 00000000-0000-0000-0000-000000000001" \
+     -d '{}' rust-logi-747065218280.asia-northeast1.run.app:443 \
+     logi.car_inspection.CarInspectionService/ListCurrentCarInspections 2>&1 | grep -E "pdfUuid|jsonUuid"
+
+   # ListCurrentCarInspectionFiles が空でないことを確認
+   grpcurl -H "Authorization: Bearer $TOKEN" \
+     -H "x-organization-id: 00000000-0000-0000-0000-000000000001" \
+     -d '{}' rust-logi-747065218280.asia-northeast1.run.app:443 \
+     logi.car_inspection.CarInspectionFilesService/ListCurrentCarInspectionFiles
+   ```
+3. **フロントエンド（nuxt-pwa-carins）からPDF/JSONの紐づき表示確認**
+
+### 注意事項
+- Cloud Run上の現バイナリには uuid型バグがあるため、デプロイ前はListCurrentCarInspectionFilesがエラーになる
+- ListCurrentCarInspectionsのpdf_uuid/json_uuidサブクエリは `uuid::text` キャストを使っているのでデプロイ後は動くはず
+- `debug_org_ids()` 関数がDBに残っている（不要なら `DROP FUNCTION debug_org_ids();` で削除可）
+
+---
+
+## 完了: 全gRPCメソッド FORCE RLS対応 (revision: rust-logi-00054-rsd)
+
+### 背景
+`migrations/00018_force_rls_on_all_tables.sql` で全28テーブルに `FORCE ROW LEVEL SECURITY` を適用後、`set_current_organization()` を呼ばないメソッドのクエリが全て0件を返していた。PDF/JSONの紐づきが0件になる問題の直接原因。
+
+### 修正内容（22メソッド）
+全メソッドに以下のパターンを追加:
+```rust
+let organization_id = get_organization_from_request(&request);
+let mut conn = self.pool.acquire().await...;
+set_current_organization(&mut conn, &organization_id).await...;
+// クエリは &mut *conn で実行
+```
+
+#### car_inspection_service.rs (9メソッド)
+- [x] `create_car_inspection` — `current_setting` 使用のため事前に `set_current_organization` 必須
+- [x] `list_car_inspections`
+- [x] `get_car_inspection`
+- [x] `delete_car_inspection`
+- [x] `list_expired_or_about_to_expire`
+- [x] `list_renew_targets`
+- [x] `create_car_inspection_file` — `current_setting` 使用のため事前に `set_current_organization` 必須
+- [x] `list_car_inspection_files`
+- [x] `list_current_car_inspection_files`
+
+#### files_service.rs (8メソッド)
+- [x] `create_file` — org_id取得済みだったが `set_current_organization` 未呼出だった
+- [x] `list_files`
+- [x] `get_file`
+- [x] `download_file` — org_id取得済みだったが `set_current_organization` 未呼出だった
+- [x] `delete_file`
+- [x] `list_not_attached_files`
+- [x] `list_recent_uploaded_files`
+- [x] `restore_file`
+
+#### cam_files_service.rs (5メソッド)
+- [x] `list_cam_files`
+- [x] `list_cam_file_dates`
+- [x] `create_cam_file_exe`
+- [x] `list_stages`
+- [x] `create_stage`
+
+#### dvr_notifications_service.rs (1メソッド)
+- [x] `retry_pending_downloads`
+
+### 対応済みだったメソッド（修正不要）
+- `list_current_car_inspections` (car_inspection_service.rs)
+- `list_renew_home_targets` (car_inspection_service.rs)
+- DtakologsService 全9メソッド
+- FlickrService 全2メソッド
+- DvrNotificationsService `bulk_create`
+- HealthService (DB未使用)
+
+### RLS必須ルール
+新しいgRPCメソッドを追加する際は **必ず** `set_current_organization()` を呼ぶこと。呼ばないと全テーブルで0件が返る。
+
+### デプロイ
+- Cloud Run revision: `rust-logi-00054-rsd`
+- Health check: SERVING
+
+---
+
+## 完了: DVR Notifications 機能
 
 ### 背景
 browser-render から DVR 通知データを受け取り、PostgreSQL に保存し、LINE WORKS に通知を送る機能。
@@ -227,7 +347,9 @@ DVR通知受信 → DB保存(pending) → LINE通知 → tokio::spawn
 - `browser-render-rust_ref/` - https://github.com/yhonda-ohishi-pub-dev/browser-render-rust.git
 - `browser_render_go_ref/` - https://github.com/yhonda-ohishi/browser_render_go.git
 - `hono-api-test_ref/` - https://github.com/yhonda-ohishi/hono-api-test.git
+- `hono-logi/` - 元のhono-logi実装（Cloudflare Workers版）
 - `lineworks-bot-rust_ref/` - https://github.com/yhonda-ohishi-pub-dev/lineworks-bot-rust.git
+- `nuxt-pwa-carins_ref/` - symlink → /home/yhonda/js/nuxt-pwa-carins（フロントエンド）
 
 ### 注意事項
 - `RUST_LOGI_URL`と`RUST_LOGI_ORGANIZATION_ID`は必須（デフォルト値なし）
