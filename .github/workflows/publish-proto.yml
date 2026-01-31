@@ -14,11 +14,13 @@ jobs:
   publish:
     runs-on: [self-hosted, Linux]
     permissions:
-      contents: write
+      contents: write  # for git tag push
       packages: write
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -35,17 +37,21 @@ jobs:
         working-directory: packages/logi-proto
         run: npm run build
 
-      - name: Bump patch version
+      - name: Set publish version from commit count
         working-directory: packages/logi-proto
-        run: npm version patch --no-git-tag-version
+        run: |
+          COMMIT_COUNT=$(git rev-list --count HEAD -- packages/logi-proto/ proto/)
+          VERSION="0.1.${COMMIT_COUNT}"
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Publishing version: $VERSION"
 
-      - name: Commit version bump
+      - name: Tag version
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add packages/logi-proto/package.json packages/logi-proto/package-lock.json
-          git commit -m "chore: bump logi-proto to $(node -p "require('./packages/logi-proto/package.json').version")"
-          git push
+          git tag "logi-proto-v${VERSION}"
+          git push origin "logi-proto-v${VERSION}"
 
       - name: Configure npm authentication
         working-directory: packages/logi-proto
