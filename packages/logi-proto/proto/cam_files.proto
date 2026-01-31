@@ -3,6 +3,7 @@ syntax = "proto3";
 package logi.cam_files;
 
 import "common.proto";
+import "flickr.proto";
 
 // CamFiles Service - カメラファイル管理
 service CamFilesService {
@@ -14,6 +15,9 @@ service CamFilesService {
 
   // カメラファイル実行情報を作成
   rpc CreateCamFileExe(CreateCamFileExeRequest) returns (CamFileExeResponse);
+
+  // カメラSD同期 + Flickrアップロード
+  rpc SyncCamFiles(SyncCamFilesRequest) returns (SyncCamFilesResponse);
 }
 
 // CamFileExeStage Service - カメラファイル実行ステージ
@@ -33,6 +37,7 @@ message CamFile {
   string type = 4;
   string cam = 5;
   optional string flickr_id = 6;
+  optional logi.flickr.FlickrPhoto flickr_photo = 7;
 }
 
 // カメラファイル実行情報
@@ -83,4 +88,16 @@ message CreateStageRequest {
 
 message StageResponse {
   CamFileExeStage stage = 1;
+}
+
+// カメラSD同期リクエスト
+message SyncCamFilesRequest {}
+
+// カメラSD同期レスポンス
+message SyncCamFilesResponse {
+  int32 processed_dates = 1;
+  int32 processed_hours = 2;
+  int32 new_files = 3;
+  int32 flickr_upload_started = 4;
+  string message = 5;
 }

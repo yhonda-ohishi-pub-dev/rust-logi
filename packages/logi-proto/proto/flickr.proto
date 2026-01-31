@@ -4,7 +4,7 @@ package logi.flickr;
 
 import "common.proto";
 
-// Flickr Service - Flickr OAuth連携
+// Flickr Service - Flickr OAuth連携 + Photo Import
 service FlickrService {
   // OAuth認可URL取得
   // クライアントはこのURLをブラウザで開いてFlickr認可を行う
@@ -13,6 +13,11 @@ service FlickrService {
   // コールバック処理
   // Flickrからのリダイレクト後、トークンを交換してアクセストークンを取得
   rpc HandleCallback(CallbackRequest) returns (TokenResponse);
+
+  // Flickr写真メタデータインポート
+  // cam_filesのflickr_idが設定されているがflickr_photoに未登録のものを
+  // Flickr APIから取得して登録する
+  rpc ImportFlickrPhotos(ImportFlickrPhotosRequest) returns (ImportFlickrPhotosResponse);
 }
 
 // 認可URLレスポンス
@@ -35,4 +40,24 @@ message TokenResponse {
   string access_token_secret = 2;
   string user_nsid = 3;   // FlickrユーザーID
   string username = 4;    // Flickrユーザー名
+}
+
+// Flickr写真メタデータ
+message FlickrPhoto {
+  string id = 1;       // Flickr photo ID
+  string secret = 2;   // Photo secret (URL構築用)
+  string server = 3;   // Photo server (URL構築用)
+}
+
+// インポートリクエスト
+message ImportFlickrPhotosRequest {
+  int32 limit = 1;  // 取得上限 (デフォルト: 500)
+}
+
+// インポートレスポンス
+message ImportFlickrPhotosResponse {
+  int32 imported_count = 1;    // 新規登録件数
+  int32 errors_count = 2;      // エラー件数
+  int32 remaining_count = 3;   // 未検証の残件数
+  repeated FlickrPhoto photos = 4;  // 登録された写真一覧
 }

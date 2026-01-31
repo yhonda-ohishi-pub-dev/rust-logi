@@ -96,7 +96,7 @@ impl FilesServiceImpl {
                                     );
 
                                     // DB更新
-                                    let now = chrono::Utc::now().to_rfc3339();
+                                    let now = chrono::Utc::now();
                                     if let Err(e) = sqlx::query(
                                         "UPDATE files SET storage_class = 'STANDARD', promoted_to_standard_at = $1 WHERE uuid = $2::uuid",
                                     )
@@ -145,7 +145,7 @@ impl FilesService for FilesServiceImpl {
         }
         let req = request.into_inner();
         let uuid = Uuid::new_v4().to_string();
-        let created = chrono::Utc::now().to_rfc3339();
+        let created = chrono::Utc::now();
 
         let mut conn = self.pool.acquire().await
             .map_err(|e| Status::internal(format!("Database connection error: {}", e)))?;
@@ -182,8 +182,8 @@ impl FilesService for FilesServiceImpl {
             // DBにメタデータのみ保存（blobはNULL）
             let result = sqlx::query_as::<_, FileModel>(
                 r#"
-                INSERT INTO files (uuid, filename, type, created_at, s3_key, storage_class, last_accessed_at)
-                VALUES ($1::uuid, $2, $3, $4, $5, 'STANDARD', $4)
+                INSERT INTO files (uuid, organization_id, filename, type, created_at, s3_key, storage_class, last_accessed_at)
+                VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, 'STANDARD', $5)
                 RETURNING uuid::text, filename, type as file_type,
                           to_char(created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created,
                           to_char(deleted_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as deleted,
@@ -194,6 +194,7 @@ impl FilesService for FilesServiceImpl {
                 "#,
             )
             .bind(&uuid)
+            .bind(&organization_id)
             .bind(&req.filename)
             .bind(&req.r#type)
             .bind(&created)
@@ -219,8 +220,8 @@ impl FilesService for FilesServiceImpl {
 
         let result = sqlx::query_as::<_, FileModel>(
             r#"
-            INSERT INTO files (uuid, filename, type, created_at, blob)
-            VALUES ($1::uuid, $2, $3, $4, $5)
+            INSERT INTO files (uuid, organization_id, filename, type, created_at, blob)
+            VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6)
             RETURNING uuid::text, filename, type as file_type,
                       to_char(created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created,
                       to_char(deleted_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as deleted,
@@ -231,6 +232,7 @@ impl FilesService for FilesServiceImpl {
             "#,
         )
         .bind(&uuid)
+        .bind(&organization_id)
         .bind(&req.filename)
         .bind(&req.r#type)
         .bind(&created)
@@ -469,7 +471,7 @@ impl FilesService for FilesServiceImpl {
     ) -> Result<Response<Empty>, Status> {
         let organization_id = get_organization_from_request(&request);
         let req = request.into_inner();
-        let deleted = chrono::Utc::now().to_rfc3339();
+        let deleted = chrono::Utc::now();
 
         let mut conn = self.pool.acquire().await
             .map_err(|e| Status::internal(format!("Database connection error: {}", e)))?;

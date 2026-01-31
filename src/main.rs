@@ -14,6 +14,7 @@ use rust_logi::proto::dtakologs::dtakologs_service_server::DtakologsServiceServe
 use rust_logi::proto::flickr::flickr_service_server::FlickrServiceServer;
 use rust_logi::proto::dvr_notifications::dvr_notifications_service_server::DvrNotificationsServiceServer;
 use rust_logi::services::cam_files_service::CamFileExeStageServiceImpl;
+use rust_logi::services::flickr_service::FlickrConfig;
 use rust_logi::services::{
     CamFilesServiceImpl, CarInspectionFilesServiceImpl, CarInspectionServiceImpl,
     FilesServiceImpl, HealthServiceImpl, DtakologsServiceImpl, FlickrServiceImpl,
@@ -76,7 +77,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.dtako_api_url.clone(),
     );
     let car_inspection_files_service = CarInspectionFilesServiceImpl::new(pool.clone());
-    let cam_files_service = CamFilesServiceImpl::new(pool.clone());
+    let cam_files_service = CamFilesServiceImpl::new(
+        pool.clone(),
+        config.cam_config.clone(),
+        FlickrConfig::from_env(),
+    );
     let cam_file_exe_stage_service = CamFileExeStageServiceImpl::new(pool.clone());
     let health_service = HealthServiceImpl::new();
     let dtakologs_service = DtakologsServiceImpl::new(pool.clone());

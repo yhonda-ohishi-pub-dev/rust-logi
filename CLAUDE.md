@@ -45,6 +45,7 @@ source .env && sqlx migrate run
 - `packages/logi-proto/` - npmパッケージ（proto + 生成済みTypeScript）
 - `docs/` - 設計ドキュメント
   - `car-inspection-date-fields.md` - 車検証日付フィールドの仕様（スペース含む値の扱い）
+  - `file-car-inspection-linkage.md` - ファイルと車検証の紐づき構造（テーブル関係、再アップロード時の挙動）
 - `convert_and_import.py` - hono-logiからのデータ移行スクリプト
 - `.env` - 環境変数 (DATABASE_URL等)
 - `hono-api-test_ref/` - 参照用: hono-api-test リポジトリ (https://github.com/yhonda-ohishi/hono-api-test.git)

@@ -47,10 +47,16 @@ hyper-util = { version = "0.1", features = ["tokio"] }
 http = "1"
 
 # HTTP Client
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "multipart"] }
 
 # Cryptography (for OAuth 1.0a signature)
 ring = "0.17"
+
+# Digest authentication (MD5 for camera HTTP auth)
+md-5 = "0.10"
+
+# XML parsing (for camera directory listing responses)
+quick-xml = "0.37"
 
 [build-dependencies]
 tonic-build = "0.12"

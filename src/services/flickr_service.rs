@@ -1,3 +1,4 @@
+use serde::Deserialize;
 use sqlx::PgPool;
 use tonic::{Request, Response, Status};
 use std::collections::HashMap;
@@ -7,8 +8,30 @@ use crate::db::{get_organization_from_request, set_current_organization};
 use crate::proto::common::Empty;
 use crate::proto::flickr::flickr_service_server::FlickrService;
 use crate::proto::flickr::{
-    AuthorizationUrlResponse, CallbackRequest, TokenResponse,
+    AuthorizationUrlResponse, CallbackRequest, FlickrPhoto,
+    ImportFlickrPhotosRequest, ImportFlickrPhotosResponse, TokenResponse,
 };
+
+/// Flickr API flickr.photos.getInfo レスポンス
+#[derive(Deserialize)]
+struct FlickrApiResponse {
+    photo: Option<FlickrApiPhoto>,
+    stat: String,
+}
+
+#[derive(Deserialize)]
+struct FlickrApiPhoto {
+    id: String,
+    server: String,
+    secret: String,
+}
+
+/// flickr_tokens テーブルのアクセストークン
+#[derive(sqlx::FromRow)]
+pub(crate) struct FlickrTokenRow {
+    pub(crate) access_token: String,
+    pub(crate) access_token_secret: String,
+}
 
 /// Flickr OAuth 1.0a 設定
 #[derive(Clone)]
@@ -49,7 +72,7 @@ impl FlickrServiceImpl {
     }
 
     /// OAuth 1.0a署名を生成
-    fn generate_signature(
+    pub(crate) fn generate_signature(
         method: &str,
         url: &str,
         params: &HashMap<String, String>,
@@ -88,7 +111,7 @@ impl FlickrServiceImpl {
     }
 
     /// パーセントエンコード (OAuth 1.0a仕様)
-    fn percent_encode(s: &str) -> String {
+    pub(crate) fn percent_encode(s: &str) -> String {
         let mut result = String::new();
         for byte in s.bytes() {
             match byte {
@@ -104,17 +127,91 @@ impl FlickrServiceImpl {
     }
 
     /// ノンス生成
-    fn generate_nonce() -> String {
+    pub(crate) fn generate_nonce() -> String {
         uuid::Uuid::new_v4().to_string().replace("-", "")
     }
 
     /// タイムスタンプ生成
-    fn generate_timestamp() -> String {
+    pub(crate) fn generate_timestamp() -> String {
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs()
             .to_string()
+    }
+
+    /// Flickr API flickr.photos.getInfo を OAuth 1.0a 署名付きで呼び出し
+    async fn call_flickr_get_info(
+        &self,
+        photo_id: &str,
+        config: &FlickrConfig,
+        access_token: &str,
+        access_token_secret: &str,
+    ) -> Result<FlickrApiPhoto, String> {
+        let api_url = "https://www.flickr.com/services/rest/";
+
+        // OAuth + APIパラメータ
+        let mut params = HashMap::new();
+        params.insert("oauth_consumer_key".to_string(), config.consumer_key.clone());
+        params.insert("oauth_nonce".to_string(), Self::generate_nonce());
+        params.insert("oauth_signature_method".to_string(), "HMAC-SHA1".to_string());
+        params.insert("oauth_timestamp".to_string(), Self::generate_timestamp());
+        params.insert("oauth_token".to_string(), access_token.to_string());
+        params.insert("oauth_version".to_string(), "1.0".to_string());
+        params.insert("method".to_string(), "flickr.photos.getInfo".to_string());
+        params.insert("photo_id".to_string(), photo_id.to_string());
+        params.insert("format".to_string(), "json".to_string());
+        params.insert("nojsoncallback".to_string(), "1".to_string());
+
+        // 署名生成
+        let signature = Self::generate_signature(
+            "GET",
+            api_url,
+            &params,
+            &config.consumer_secret,
+            Some(access_token_secret),
+        );
+        params.insert("oauth_signature".to_string(), signature);
+
+        // OAuthパラメータをAuthorizationヘッダーに、APIパラメータをクエリに分離
+        let oauth_keys = [
+            "oauth_consumer_key", "oauth_nonce", "oauth_signature_method",
+            "oauth_timestamp", "oauth_token", "oauth_version", "oauth_signature",
+        ];
+        let auth_header: String = params.iter()
+            .filter(|(k, _)| oauth_keys.contains(&k.as_str()))
+            .map(|(k, v)| format!("{}=\"{}\"", Self::percent_encode(k), Self::percent_encode(v)))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let query_params: Vec<(&str, &str)> = params.iter()
+            .filter(|(k, _)| !oauth_keys.contains(&k.as_str()))
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+
+        let response = self.http_client
+            .get(api_url)
+            .header("Authorization", format!("OAuth {}", auth_header))
+            .query(&query_params)
+            .send()
+            .await
+            .map_err(|e| format!("HTTP request failed for photo {}: {}", photo_id, e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(format!("Flickr API error for photo {}: {} - {}", photo_id, status, body));
+        }
+
+        let api_response: FlickrApiResponse = response.json().await
+            .map_err(|e| format!("Failed to parse Flickr response for photo {}: {}", photo_id, e))?;
+
+        if api_response.stat != "ok" {
+            return Err(format!("Flickr API returned stat={} for photo {}", api_response.stat, photo_id));
+        }
+
+        api_response.photo
+            .ok_or_else(|| format!("No photo data in Flickr response for photo {}", photo_id))
     }
 }
 
@@ -371,6 +468,140 @@ impl FlickrService for FlickrServiceImpl {
             access_token_secret: access_token_secret.clone(),
             user_nsid,
             username,
+        }))
+    }
+
+    /// Flickr写真メタデータインポート
+    async fn import_flickr_photos(
+        &self,
+        request: Request<ImportFlickrPhotosRequest>,
+    ) -> Result<Response<ImportFlickrPhotosResponse>, Status> {
+        let organization_id = get_organization_from_request(&request);
+        let req = request.into_inner();
+        let limit = if req.limit > 0 { req.limit } else { 500 };
+
+        tracing::info!(
+            "ImportFlickrPhotos called for organization: {}, limit: {}",
+            organization_id, limit
+        );
+
+        let config = self.config.as_ref().ok_or_else(|| {
+            Status::failed_precondition("Flickr OAuth is not configured. Set FLICKR_CONSUMER_KEY and FLICKR_CONSUMER_SECRET.")
+        })?;
+
+        let mut conn = self.pool.acquire().await
+            .map_err(|e| Status::internal(format!("Failed to acquire connection: {}", e)))?;
+        set_current_organization(&mut conn, &organization_id).await
+            .map_err(|e| Status::internal(format!("Failed to set organization: {}", e)))?;
+
+        // アクセストークン取得
+        let token = sqlx::query_as::<_, FlickrTokenRow>(
+            "SELECT access_token, access_token_secret FROM flickr_tokens LIMIT 1"
+        )
+        .fetch_optional(&mut *conn)
+        .await
+        .map_err(|e| Status::internal(format!("Failed to query flickr_tokens: {}", e)))?
+        .ok_or_else(|| Status::failed_precondition(
+            "No Flickr access token found. Please authorize via GetAuthorizationUrl first."
+        ))?;
+
+        // 未検証写真を取得 (cam_files LEFT JOIN flickr_photo)
+        let unverified: Vec<(String,)> = sqlx::query_as(
+            r#"
+            SELECT cf.flickr_id
+            FROM cam_files cf
+            LEFT JOIN flickr_photo fp ON cf.flickr_id = fp.id AND cf.organization_id = fp.organization_id
+            WHERE cf.flickr_id IS NOT NULL AND fp.id IS NULL
+            LIMIT $1
+            "#,
+        )
+        .bind(limit)
+        .fetch_all(&mut *conn)
+        .await
+        .map_err(|e| Status::internal(format!("Failed to query unverified photos: {}", e)))?;
+
+        if unverified.is_empty() {
+            tracing::info!("No unverified Flickr photos found");
+            return Ok(Response::new(ImportFlickrPhotosResponse {
+                imported_count: 0,
+                errors_count: 0,
+                remaining_count: 0,
+                photos: vec![],
+            }));
+        }
+
+        tracing::info!("Found {} unverified Flickr photos", unverified.len());
+
+        let mut imported = Vec::new();
+        let mut errors_count = 0i32;
+
+        for (flickr_id,) in &unverified {
+            match self.call_flickr_get_info(
+                flickr_id,
+                config,
+                &token.access_token,
+                &token.access_token_secret,
+            ).await {
+                Ok(photo) => {
+                    // flickr_photoにINSERT
+                    match sqlx::query(
+                        r#"
+                        INSERT INTO flickr_photo (id, organization_id, secret, server)
+                        VALUES ($1, $2::uuid, $3, $4)
+                        ON CONFLICT (organization_id, id) DO NOTHING
+                        "#,
+                    )
+                    .bind(&photo.id)
+                    .bind(&organization_id)
+                    .bind(&photo.secret)
+                    .bind(&photo.server)
+                    .execute(&mut *conn)
+                    .await {
+                        Ok(_) => {
+                            tracing::debug!("Imported flickr_photo: id={}", photo.id);
+                            imported.push(FlickrPhoto {
+                                id: photo.id,
+                                secret: photo.secret,
+                                server: photo.server,
+                            });
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to insert flickr_photo {}: {}", flickr_id, e);
+                            errors_count += 1;
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to fetch Flickr photo info: {}", e);
+                    errors_count += 1;
+                }
+            }
+        }
+
+        // 残りの未検証件数を取得
+        let remaining: (i64,) = sqlx::query_as(
+            r#"
+            SELECT COUNT(*)
+            FROM cam_files cf
+            LEFT JOIN flickr_photo fp ON cf.flickr_id = fp.id AND cf.organization_id = fp.organization_id
+            WHERE cf.flickr_id IS NOT NULL AND fp.id IS NULL
+            "#,
+        )
+        .fetch_one(&mut *conn)
+        .await
+        .map_err(|e| Status::internal(format!("Failed to count remaining: {}", e)))?;
+
+        let imported_count = imported.len() as i32;
+        tracing::info!(
+            "ImportFlickrPhotos completed: imported={}, errors={}, remaining={}",
+            imported_count, errors_count, remaining.0
+        );
+
+        Ok(Response::new(ImportFlickrPhotosResponse {
+            imported_count,
+            errors_count,
+            remaining_count: remaining.0 as i32,
+            photos: imported,
         }))
     }
 }
