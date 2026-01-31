@@ -17,6 +17,7 @@ src/proto/*.rs
 # Cloned reference repository
 hono-logi/
 lineworks-bot-rust_ref/
+nuxt-pwa-carins_ref
 
 # Cloud SQL Proxy binary
 cloud-sql-proxy
