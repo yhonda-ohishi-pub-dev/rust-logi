@@ -14,7 +14,7 @@ jobs:
   publish:
     runs-on: [self-hosted, Linux]
     permissions:
-      contents: read
+      contents: write
       packages: write
 
     steps:
@@ -34,6 +34,18 @@ jobs:
       - name: Build
         working-directory: packages/logi-proto
         run: npm run build
+
+      - name: Bump patch version
+        working-directory: packages/logi-proto
+        run: npm version patch --no-git-tag-version
+
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add packages/logi-proto/package.json packages/logi-proto/package-lock.json
+          git commit -m "chore: bump logi-proto to $(node -p "require('./packages/logi-proto/package.json').version")"
+          git push
 
       - name: Configure npm authentication
         working-directory: packages/logi-proto
