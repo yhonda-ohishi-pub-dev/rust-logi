@@ -32,5 +32,6 @@ packages/*/node_modules/
 packages/*/dist/
 packages/*/src/gen/
 test/node_modules/
+test/240709_*
 .claude/skills
 tools
