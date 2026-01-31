@@ -3,7 +3,7 @@ use sqlx::FromRow;
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct CarInspectionFileModel {
-    pub uuid: String,
+    pub uuid: uuid::Uuid,
     #[sqlx(rename = "type")]
     pub file_type: String,
     #[sqlx(rename = "ElectCertMgNo")]
@@ -26,7 +26,7 @@ pub struct CarInspectionFileModel {
 
 impl CarInspectionFileModel {
     pub fn new(
-        uuid: String,
+        uuid: uuid::Uuid,
         file_type: String,
         elect_cert_mg_no: String,
         grantdate_e: String,

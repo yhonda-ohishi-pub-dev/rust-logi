@@ -176,10 +176,16 @@ impl CarInspectionService for CarInspectionServiceImpl {
         &self,
         request: Request<CreateCarInspectionRequest>,
     ) -> Result<Response<CarInspectionResponse>, Status> {
+        let organization_id = get_organization_from_request(&request);
         let req = request.into_inner();
         let ci = req
             .car_inspection
             .ok_or_else(|| Status::invalid_argument("car_inspection is required"))?;
+
+        let mut conn = self.pool.acquire().await
+            .map_err(|e| Status::internal(format!("Database connection error: {}", e)))?;
+        set_current_organization(&mut conn, &organization_id).await
+            .map_err(|e| Status::internal(format!("Failed to set organization context: {}", e)))?;
 
         // Use ON CONFLICT DO UPDATE for upsert
         // Note: created_at and modified_at use DB defaults (NOW())
@@ -328,7 +334,7 @@ impl CarInspectionService for CarInspectionServiceImpl {
         .bind(&ci.twodimension_code_info_safe_std_date)
         .bind(&ci.twodimension_code_info_fuel_class_code)
         .bind(&ci.regist_car_light_car)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *conn)
         .await
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
 
@@ -339,12 +345,19 @@ impl CarInspectionService for CarInspectionServiceImpl {
 
     async fn list_car_inspections(
         &self,
-        _request: Request<ListCarInspectionsRequest>,
+        request: Request<ListCarInspectionsRequest>,
     ) -> Result<Response<ListCarInspectionsResponse>, Status> {
+        let organization_id = get_organization_from_request(&request);
+
+        let mut conn = self.pool.acquire().await
+            .map_err(|e| Status::internal(format!("Database connection error: {}", e)))?;
+        set_current_organization(&mut conn, &organization_id).await
+            .map_err(|e| Status::internal(format!("Failed to set organization context: {}", e)))?;
+
         let inspections = sqlx::query_as::<_, CarInspectionModel>(
             r#"SELECT * FROM car_inspection ORDER BY "GrantdateY" DESC, "GrantdateM" DESC, "GrantdateD" DESC"#,
         )
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
 
@@ -359,12 +372,21 @@ impl CarInspectionService for CarInspectionServiceImpl {
 
     async fn list_current_car_inspections(
         &self,
-        _request: Request<Empty>,
+        request: Request<Empty>,
     ) -> Result<Response<ListCarInspectionsResponse>, Status> {
-        // Get current car inspections (valid period not expired) with file UUIDs
+        // Extract organization_id from gRPC metadata
+        let organization_id = get_organization_from_request(&request);
+
+        // Acquire DB connection and set organization context
+        let mut conn = self.pool.acquire().await
+            .map_err(|e| Status::internal(format!("Database connection error: {}", e)))?;
+        set_current_organization(&mut conn, &organization_id).await
+            .map_err(|e| Status::internal(format!("Failed to set organization context: {}", e)))?;
+
+        // Get car inspections with latest record per CarId and file UUIDs
         let inspections = sqlx::query_as::<_, CarInspectionModel>(
             r#"
-            SELECT
+            SELECT DISTINCT ON (ci."CarId")
                 ci.*,
                 (SELECT uuid::text FROM car_inspection_files_b
                  WHERE organization_id = ci.organization_id
@@ -387,11 +409,12 @@ impl CarInspectionService for CarInspectionServiceImpl {
                    AND deleted_at IS NULL
                  ORDER BY created_at DESC LIMIT 1) as json_uuid
             FROM car_inspection ci
-            WHERE ci."TwodimensionCodeInfoValidPeriodExpirdate" >= to_char(CURRENT_DATE, 'YYMMDD')
-            ORDER BY ci."TwodimensionCodeInfoValidPeriodExpirdate" ASC
+            ORDER BY ci."CarId",
+                     ci."TwodimensionCodeInfoValidPeriodExpirdate" DESC,
+                     ci.created_at DESC
             "#,
         )
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
 
@@ -408,7 +431,13 @@ impl CarInspectionService for CarInspectionServiceImpl {
         &self,
         request: Request<GetCarInspectionRequest>,
     ) -> Result<Response<CarInspectionResponse>, Status> {
+        let organization_id = get_organization_from_request(&request);
         let req = request.into_inner();
+
+        let mut conn = self.pool.acquire().await
+            .map_err(|e| Status::internal(format!("Database connection error: {}", e)))?;
+        set_current_organization(&mut conn, &organization_id).await
+            .map_err(|e| Status::internal(format!("Failed to set organization context: {}", e)))?;
 
         let inspection = sqlx::query_as::<_, CarInspectionModel>(
             r#"
@@ -425,7 +454,7 @@ impl CarInspectionService for CarInspectionServiceImpl {
         .bind(&req.grantdate_y)
         .bind(&req.grantdate_m)
         .bind(&req.grantdate_d)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *conn)
         .await
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?
         .ok_or_else(|| Status::not_found("Car inspection not found"))?;
@@ -439,7 +468,13 @@ impl CarInspectionService for CarInspectionServiceImpl {
         &self,
         request: Request<DeleteCarInspectionRequest>,
     ) -> Result<Response<Empty>, Status> {
+        let organization_id = get_organization_from_request(&request);
         let req = request.into_inner();
+
+        let mut conn = self.pool.acquire().await
+            .map_err(|e| Status::internal(format!("Database connection error: {}", e)))?;
+        set_current_organization(&mut conn, &organization_id).await
+            .map_err(|e| Status::internal(format!("Failed to set organization context: {}", e)))?;
 
         sqlx::query(
             r#"
@@ -456,7 +491,7 @@ impl CarInspectionService for CarInspectionServiceImpl {
         .bind(&req.grantdate_y)
         .bind(&req.grantdate_m)
         .bind(&req.grantdate_d)
-        .execute(&self.pool)
+        .execute(&mut *conn)
         .await
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
 
@@ -465,8 +500,15 @@ impl CarInspectionService for CarInspectionServiceImpl {
 
     async fn list_expired_or_about_to_expire(
         &self,
-        _request: Request<Empty>,
+        request: Request<Empty>,
     ) -> Result<Response<ListCarInspectionsResponse>, Status> {
+        let organization_id = get_organization_from_request(&request);
+
+        let mut conn = self.pool.acquire().await
+            .map_err(|e| Status::internal(format!("Database connection error: {}", e)))?;
+        set_current_organization(&mut conn, &organization_id).await
+            .map_err(|e| Status::internal(format!("Failed to set organization context: {}", e)))?;
+
         // Expired or expiring within 30 days
         let inspections = sqlx::query_as::<_, CarInspectionModel>(
             r#"
@@ -475,7 +517,7 @@ impl CarInspectionService for CarInspectionServiceImpl {
             ORDER BY "TwodimensionCodeInfoValidPeriodExpirdate" ASC
             "#,
         )
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
 
@@ -490,8 +532,15 @@ impl CarInspectionService for CarInspectionServiceImpl {
 
     async fn list_renew_targets(
         &self,
-        _request: Request<Empty>,
+        request: Request<Empty>,
     ) -> Result<Response<ListCarInspectionsResponse>, Status> {
+        let organization_id = get_organization_from_request(&request);
+
+        let mut conn = self.pool.acquire().await
+            .map_err(|e| Status::internal(format!("Database connection error: {}", e)))?;
+        set_current_organization(&mut conn, &organization_id).await
+            .map_err(|e| Status::internal(format!("Failed to set organization context: {}", e)))?;
+
         // Vehicles that need renewal (expiring within 60 days)
         let inspections = sqlx::query_as::<_, CarInspectionModel>(
             r#"
@@ -501,7 +550,7 @@ impl CarInspectionService for CarInspectionServiceImpl {
             ORDER BY "TwodimensionCodeInfoValidPeriodExpirdate" ASC
             "#,
         )
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
 
@@ -930,7 +979,7 @@ impl CarInspectionFilesServiceImpl {
 
     fn model_to_proto(model: &CarInspectionFileModel) -> CarInspectionFile {
         CarInspectionFile {
-            uuid: model.uuid.clone(),
+            uuid: model.uuid.to_string(),
             r#type: model.file_type.clone(),
             elect_cert_mg_no: model.elect_cert_mg_no.clone(),
             grantdate_e: model.grantdate_e.clone(),
@@ -950,10 +999,16 @@ impl CarInspectionFilesService for CarInspectionFilesServiceImpl {
         &self,
         request: Request<CreateCarInspectionFileRequest>,
     ) -> Result<Response<CarInspectionFileResponse>, Status> {
+        let organization_id = get_organization_from_request(&request);
         let req = request.into_inner();
         let file = req
             .file
             .ok_or_else(|| Status::invalid_argument("file is required"))?;
+
+        let mut conn = self.pool.acquire().await
+            .map_err(|e| Status::internal(format!("Database connection error: {}", e)))?;
+        set_current_organization(&mut conn, &organization_id).await
+            .map_err(|e| Status::internal(format!("Failed to set organization context: {}", e)))?;
 
         let result = sqlx::query_as::<_, CarInspectionFileModel>(
             r#"
@@ -970,7 +1025,7 @@ impl CarInspectionFilesService for CarInspectionFilesServiceImpl {
         .bind(&file.grantdate_y)
         .bind(&file.grantdate_m)
         .bind(&file.grantdate_d)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *conn)
         .await
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
 
@@ -983,20 +1038,26 @@ impl CarInspectionFilesService for CarInspectionFilesServiceImpl {
         &self,
         request: Request<ListCarInspectionFilesRequest>,
     ) -> Result<Response<ListCarInspectionFilesResponse>, Status> {
+        let organization_id = get_organization_from_request(&request);
         let req = request.into_inner();
+
+        let mut conn = self.pool.acquire().await
+            .map_err(|e| Status::internal(format!("Database connection error: {}", e)))?;
+        set_current_organization(&mut conn, &organization_id).await
+            .map_err(|e| Status::internal(format!("Failed to set organization context: {}", e)))?;
 
         let files = if let Some(elect_cert_mg_no) = req.elect_cert_mg_no {
             sqlx::query_as::<_, CarInspectionFileModel>(
                 r#"SELECT * FROM car_inspection_files_a WHERE "ElectCertMgNo" = $1 AND deleted_at IS NULL ORDER BY created_at DESC"#,
             )
             .bind(&elect_cert_mg_no)
-            .fetch_all(&self.pool)
+            .fetch_all(&mut *conn)
             .await
         } else {
             sqlx::query_as::<_, CarInspectionFileModel>(
                 r#"SELECT * FROM car_inspection_files_a WHERE deleted_at IS NULL ORDER BY created_at DESC"#,
             )
-            .fetch_all(&self.pool)
+            .fetch_all(&mut *conn)
             .await
         }
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
@@ -1011,8 +1072,15 @@ impl CarInspectionFilesService for CarInspectionFilesServiceImpl {
 
     async fn list_current_car_inspection_files(
         &self,
-        _request: Request<Empty>,
+        request: Request<Empty>,
     ) -> Result<Response<ListCarInspectionFilesResponse>, Status> {
+        let organization_id = get_organization_from_request(&request);
+
+        let mut conn = self.pool.acquire().await
+            .map_err(|e| Status::internal(format!("Database connection error: {}", e)))?;
+        set_current_organization(&mut conn, &organization_id).await
+            .map_err(|e| Status::internal(format!("Failed to set organization context: {}", e)))?;
+
         let files = sqlx::query_as::<_, CarInspectionFileModel>(
             r#"
             SELECT cif.*
@@ -1028,7 +1096,7 @@ impl CarInspectionFilesService for CarInspectionFilesServiceImpl {
             ORDER BY cif.created_at DESC
             "#,
         )
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
 

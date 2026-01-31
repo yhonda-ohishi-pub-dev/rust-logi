@@ -345,6 +345,12 @@ impl DvrNotificationsService for DvrNotificationsServiceImpl {
             }));
         }
 
+        // Set RLS context for this organization
+        let mut conn = self.pool.acquire().await
+            .map_err(|e| Status::internal(format!("Database connection error: {}", e)))?;
+        set_current_organization(&mut conn, &organization_id).await
+            .map_err(|e| Status::internal(format!("Failed to set organization context: {}", e)))?;
+
         // Fetch all pending records for this organization
         let pending_records: Vec<(String, String)> = sqlx::query_as(
             r#"
@@ -356,7 +362,7 @@ impl DvrNotificationsService for DvrNotificationsServiceImpl {
             "#,
         )
         .bind(&organization_id)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(|e| Status::internal(format!("Failed to fetch pending records: {}", e)))?;
 

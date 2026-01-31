@@ -1,6 +1,7 @@
 use sqlx::PgPool;
 use tonic::{Request, Response, Status};
 
+use crate::db::{get_organization_from_request, set_current_organization};
 use crate::models::{CamFileExeModel, CamFileExeStageModel, CamFileModel};
 use crate::proto::cam_files::cam_file_exe_stage_service_server::CamFileExeStageService;
 use crate::proto::cam_files::cam_files_service_server::CamFilesService;
@@ -38,7 +39,13 @@ impl CamFilesService for CamFilesServiceImpl {
         &self,
         request: Request<ListCamFilesRequest>,
     ) -> Result<Response<ListCamFilesResponse>, Status> {
+        let organization_id = get_organization_from_request(&request);
         let req = request.into_inner();
+
+        let mut conn = self.pool.acquire().await
+            .map_err(|e| Status::internal(format!("Database connection error: {}", e)))?;
+        set_current_organization(&mut conn, &organization_id).await
+            .map_err(|e| Status::internal(format!("Failed to set organization context: {}", e)))?;
 
         let files = match (req.date, req.cam) {
             (Some(date), Some(cam)) => {
@@ -47,7 +54,7 @@ impl CamFilesService for CamFilesServiceImpl {
                 )
                 .bind(&date)
                 .bind(&cam)
-                .fetch_all(&self.pool)
+                .fetch_all(&mut *conn)
                 .await
             }
             (Some(date), None) => {
@@ -55,7 +62,7 @@ impl CamFilesService for CamFilesServiceImpl {
                     "SELECT * FROM cam_files WHERE date = $1 ORDER BY hour",
                 )
                 .bind(&date)
-                .fetch_all(&self.pool)
+                .fetch_all(&mut *conn)
                 .await
             }
             (None, Some(cam)) => {
@@ -63,14 +70,14 @@ impl CamFilesService for CamFilesServiceImpl {
                     "SELECT * FROM cam_files WHERE cam = $1 ORDER BY date DESC, hour",
                 )
                 .bind(&cam)
-                .fetch_all(&self.pool)
+                .fetch_all(&mut *conn)
                 .await
             }
             (None, None) => {
                 sqlx::query_as::<_, CamFileModel>(
                     "SELECT * FROM cam_files ORDER BY date DESC, hour LIMIT 100",
                 )
-                .fetch_all(&self.pool)
+                .fetch_all(&mut *conn)
                 .await
             }
         }
@@ -86,11 +93,18 @@ impl CamFilesService for CamFilesServiceImpl {
 
     async fn list_cam_file_dates(
         &self,
-        _request: Request<Empty>,
+        request: Request<Empty>,
     ) -> Result<Response<ListCamFileDatesResponse>, Status> {
+        let organization_id = get_organization_from_request(&request);
+
+        let mut conn = self.pool.acquire().await
+            .map_err(|e| Status::internal(format!("Database connection error: {}", e)))?;
+        set_current_organization(&mut conn, &organization_id).await
+            .map_err(|e| Status::internal(format!("Failed to set organization context: {}", e)))?;
+
         let dates: Vec<(String,)> =
             sqlx::query_as("SELECT DISTINCT date FROM cam_files ORDER BY date DESC")
-                .fetch_all(&self.pool)
+                .fetch_all(&mut *conn)
                 .await
                 .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
 
@@ -103,10 +117,16 @@ impl CamFilesService for CamFilesServiceImpl {
         &self,
         request: Request<CreateCamFileExeRequest>,
     ) -> Result<Response<CamFileExeResponse>, Status> {
+        let organization_id = get_organization_from_request(&request);
         let req = request.into_inner();
         let exe = req
             .exe
             .ok_or_else(|| Status::invalid_argument("exe is required"))?;
+
+        let mut conn = self.pool.acquire().await
+            .map_err(|e| Status::internal(format!("Database connection error: {}", e)))?;
+        set_current_organization(&mut conn, &organization_id).await
+            .map_err(|e| Status::internal(format!("Failed to set organization context: {}", e)))?;
 
         let result = sqlx::query_as::<_, CamFileExeModel>(
             r#"
@@ -119,7 +139,7 @@ impl CamFilesService for CamFilesServiceImpl {
         .bind(&exe.name)
         .bind(&exe.cam)
         .bind(exe.stage)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *conn)
         .await
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
 
@@ -147,12 +167,19 @@ impl CamFileExeStageServiceImpl {
 impl CamFileExeStageService for CamFileExeStageServiceImpl {
     async fn list_stages(
         &self,
-        _request: Request<Empty>,
+        request: Request<Empty>,
     ) -> Result<Response<ListStagesResponse>, Status> {
+        let organization_id = get_organization_from_request(&request);
+
+        let mut conn = self.pool.acquire().await
+            .map_err(|e| Status::internal(format!("Database connection error: {}", e)))?;
+        set_current_organization(&mut conn, &organization_id).await
+            .map_err(|e| Status::internal(format!("Failed to set organization context: {}", e)))?;
+
         let stages = sqlx::query_as::<_, CamFileExeStageModel>(
             "SELECT * FROM cam_file_exe_stage ORDER BY stage",
         )
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
 
@@ -173,10 +200,16 @@ impl CamFileExeStageService for CamFileExeStageServiceImpl {
         &self,
         request: Request<CreateStageRequest>,
     ) -> Result<Response<StageResponse>, Status> {
+        let organization_id = get_organization_from_request(&request);
         let req = request.into_inner();
         let stage = req
             .stage
             .ok_or_else(|| Status::invalid_argument("stage is required"))?;
+
+        let mut conn = self.pool.acquire().await
+            .map_err(|e| Status::internal(format!("Database connection error: {}", e)))?;
+        set_current_organization(&mut conn, &organization_id).await
+            .map_err(|e| Status::internal(format!("Failed to set organization context: {}", e)))?;
 
         let result = sqlx::query_as::<_, CamFileExeStageModel>(
             r#"
@@ -188,7 +221,7 @@ impl CamFileExeStageService for CamFileExeStageServiceImpl {
         )
         .bind(stage.stage)
         .bind(&stage.name)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *conn)
         .await
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
 

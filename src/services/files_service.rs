@@ -4,7 +4,7 @@ use sqlx::PgPool;
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
-use crate::db::{get_organization_from_request, DEFAULT_ORGANIZATION_ID};
+use crate::db::{get_organization_from_request, set_current_organization, DEFAULT_ORGANIZATION_ID};
 use crate::models::FileModel;
 use crate::proto::common::Empty;
 use crate::proto::files::files_service_server::FilesService;
@@ -147,6 +147,11 @@ impl FilesService for FilesServiceImpl {
         let uuid = Uuid::new_v4().to_string();
         let created = chrono::Utc::now().to_rfc3339();
 
+        let mut conn = self.pool.acquire().await
+            .map_err(|e| Status::internal(format!("Database connection error: {}", e)))?;
+        set_current_organization(&mut conn, &organization_id).await
+            .map_err(|e| Status::internal(format!("Failed to set organization context: {}", e)))?;
+
         tracing::info!(
             "Creating file: uuid={}, filename={}, org={}",
             uuid,
@@ -193,7 +198,7 @@ impl FilesService for FilesServiceImpl {
             .bind(&req.r#type)
             .bind(&created)
             .bind(&gcs_key)
-            .fetch_one(&self.pool)
+            .fetch_one(&mut *conn)
             .await
             .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
 
@@ -230,7 +235,7 @@ impl FilesService for FilesServiceImpl {
         .bind(&req.r#type)
         .bind(&created)
         .bind(&blob)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *conn)
         .await
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
 
@@ -243,7 +248,13 @@ impl FilesService for FilesServiceImpl {
         &self,
         request: Request<ListFilesRequest>,
     ) -> Result<Response<ListFilesResponse>, Status> {
+        let organization_id = get_organization_from_request(&request);
         let req = request.into_inner();
+
+        let mut conn = self.pool.acquire().await
+            .map_err(|e| Status::internal(format!("Database connection error: {}", e)))?;
+        set_current_organization(&mut conn, &organization_id).await
+            .map_err(|e| Status::internal(format!("Failed to set organization context: {}", e)))?;
 
         let files = if let Some(type_filter) = req.type_filter {
             sqlx::query_as::<_, FileModel>(
@@ -261,7 +272,7 @@ impl FilesService for FilesServiceImpl {
                 "#,
             )
             .bind(&type_filter)
-            .fetch_all(&self.pool)
+            .fetch_all(&mut *conn)
             .await
         } else {
             sqlx::query_as::<_, FileModel>(
@@ -278,7 +289,7 @@ impl FilesService for FilesServiceImpl {
                 ORDER BY created_at DESC
                 "#,
             )
-            .fetch_all(&self.pool)
+            .fetch_all(&mut *conn)
             .await
         }
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
@@ -295,7 +306,13 @@ impl FilesService for FilesServiceImpl {
         &self,
         request: Request<GetFileRequest>,
     ) -> Result<Response<FileResponse>, Status> {
+        let organization_id = get_organization_from_request(&request);
         let req = request.into_inner();
+
+        let mut conn = self.pool.acquire().await
+            .map_err(|e| Status::internal(format!("Database connection error: {}", e)))?;
+        set_current_organization(&mut conn, &organization_id).await
+            .map_err(|e| Status::internal(format!("Failed to set organization context: {}", e)))?;
 
         let query = if req.include_blob {
             r#"
@@ -323,7 +340,7 @@ impl FilesService for FilesServiceImpl {
 
         let file = sqlx::query_as::<_, FileModel>(query)
             .bind(&req.uuid)
-            .fetch_optional(&self.pool)
+            .fetch_optional(&mut *conn)
             .await
             .map_err(|e| Status::internal(format!("Database error: {}", e)))?
             .ok_or_else(|| Status::not_found(format!("File not found: {}", req.uuid)))?;
@@ -343,6 +360,11 @@ impl FilesService for FilesServiceImpl {
         let organization_id = get_organization_from_request(&request);
         let req = request.into_inner();
 
+        let mut conn = self.pool.acquire().await
+            .map_err(|e| Status::internal(format!("Database connection error: {}", e)))?;
+        set_current_organization(&mut conn, &organization_id).await
+            .map_err(|e| Status::internal(format!("Failed to set organization context: {}", e)))?;
+
         let file = sqlx::query_as::<_, FileModel>(
             r#"
             SELECT uuid::text, filename, type as file_type,
@@ -356,7 +378,7 @@ impl FilesService for FilesServiceImpl {
             "#,
         )
         .bind(&req.uuid)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *conn)
         .await
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?
         .ok_or_else(|| Status::not_found(format!("File not found: {}", req.uuid)))?;
@@ -445,14 +467,20 @@ impl FilesService for FilesServiceImpl {
         &self,
         request: Request<DeleteFileRequest>,
     ) -> Result<Response<Empty>, Status> {
+        let organization_id = get_organization_from_request(&request);
         let req = request.into_inner();
         let deleted = chrono::Utc::now().to_rfc3339();
+
+        let mut conn = self.pool.acquire().await
+            .map_err(|e| Status::internal(format!("Database connection error: {}", e)))?;
+        set_current_organization(&mut conn, &organization_id).await
+            .map_err(|e| Status::internal(format!("Failed to set organization context: {}", e)))?;
 
         // ソフトデリート（GCSからは削除しない）
         sqlx::query("UPDATE files SET deleted_at = $1 WHERE uuid = $2::uuid")
             .bind(&deleted)
             .bind(&req.uuid)
-            .execute(&self.pool)
+            .execute(&mut *conn)
             .await
             .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
 
@@ -461,8 +489,15 @@ impl FilesService for FilesServiceImpl {
 
     async fn list_not_attached_files(
         &self,
-        _request: Request<ListFilesRequest>,
+        request: Request<ListFilesRequest>,
     ) -> Result<Response<ListFilesResponse>, Status> {
+        let organization_id = get_organization_from_request(&request);
+
+        let mut conn = self.pool.acquire().await
+            .map_err(|e| Status::internal(format!("Database connection error: {}", e)))?;
+        set_current_organization(&mut conn, &organization_id).await
+            .map_err(|e| Status::internal(format!("Failed to set organization context: {}", e)))?;
+
         // Files that are not attached to any car inspection
         let files = sqlx::query_as::<_, FileModel>(
             r#"
@@ -479,7 +514,7 @@ impl FilesService for FilesServiceImpl {
             ORDER BY f.created_at DESC
             "#,
         )
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
 
@@ -493,8 +528,15 @@ impl FilesService for FilesServiceImpl {
 
     async fn list_recent_uploaded_files(
         &self,
-        _request: Request<ListFilesRequest>,
+        request: Request<ListFilesRequest>,
     ) -> Result<Response<ListFilesResponse>, Status> {
+        let organization_id = get_organization_from_request(&request);
+
+        let mut conn = self.pool.acquire().await
+            .map_err(|e| Status::internal(format!("Database connection error: {}", e)))?;
+        set_current_organization(&mut conn, &organization_id).await
+            .map_err(|e| Status::internal(format!("Failed to set organization context: {}", e)))?;
+
         let files = sqlx::query_as::<_, FileModel>(
             r#"
             SELECT uuid::text, filename, type as file_type,
@@ -510,7 +552,7 @@ impl FilesService for FilesServiceImpl {
             LIMIT 50
             "#,
         )
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
 
@@ -527,7 +569,13 @@ impl FilesService for FilesServiceImpl {
         &self,
         request: Request<RestoreFileRequest>,
     ) -> Result<Response<RestoreFileResponse>, Status> {
+        let organization_id = get_organization_from_request(&request);
         let req = request.into_inner();
+
+        let mut conn = self.pool.acquire().await
+            .map_err(|e| Status::internal(format!("Database connection error: {}", e)))?;
+        set_current_organization(&mut conn, &organization_id).await
+            .map_err(|e| Status::internal(format!("Failed to set organization context: {}", e)))?;
 
         // ファイル情報を取得
         let file = sqlx::query_as::<_, FileModel>(
@@ -543,7 +591,7 @@ impl FilesService for FilesServiceImpl {
             "#,
         )
         .bind(&req.uuid)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *conn)
         .await
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?
         .ok_or_else(|| Status::not_found(format!("File not found: {}", req.uuid)))?;
