@@ -3,12 +3,17 @@ package logi.auth;
 
 service AuthService {
   rpc Login(LoginRequest) returns (LoginResponse);
+  rpc LoginWithGoogle(LoginWithGoogleRequest) returns (LoginResponse);
   rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse);
 }
 
 message LoginRequest {
   string username = 1;
   string password = 2;
+}
+
+message LoginWithGoogleRequest {
+  string email = 1;
 }
 
 message LoginResponse {

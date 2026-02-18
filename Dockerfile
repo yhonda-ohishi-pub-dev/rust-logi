@@ -20,11 +20,14 @@ RUN mkdir -p src/proto && echo "fn main() {}" > src/main.rs
 # Build dependencies (cached layer)
 RUN cargo build --release --target x86_64-unknown-linux-musl && rm -rf src
 
+# Copy sqlx query cache for offline builds
+COPY .sqlx ./.sqlx
+
 # Copy actual source
 COPY src ./src
 
-# Build application
-RUN touch src/main.rs && cargo build --release --target x86_64-unknown-linux-musl
+# Build application (SQLX_OFFLINE uses .sqlx query cache)
+RUN touch src/main.rs && SQLX_OFFLINE=true cargo build --release --target x86_64-unknown-linux-musl
 
 # Runtime stage - scratch for minimal image
 FROM scratch

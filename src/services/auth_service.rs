@@ -1,15 +1,13 @@
-use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use chrono::Utc;
 use jsonwebtoken::{encode, EncodingKey, Header};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use tonic::{Request, Response, Status};
 
-use crate::models::ApiUser;
 use crate::proto::auth::auth_service_server::AuthService;
 use crate::proto::auth::{
-    LoginRequest, LoginResponse, ValidateTokenRequest, ValidateTokenResponse,
+    LoginRequest, LoginResponse, LoginWithGoogleRequest, ValidateTokenRequest,
+    ValidateTokenResponse,
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -30,64 +28,67 @@ impl AuthServiceImpl {
     pub fn new(pool: PgPool, jwt_secret: String) -> Self {
         Self { pool, jwt_secret }
     }
-}
 
-#[tonic::async_trait]
-impl AuthService for AuthServiceImpl {
-    async fn login(
+    fn issue_jwt(
         &self,
-        request: Request<LoginRequest>,
-    ) -> Result<Response<LoginResponse>, Status> {
-        let req = request.into_inner();
-
-        let user = sqlx::query_as::<_, ApiUser>(
-            "SELECT id::text, organization_id::text, username, password_hash, enabled
-             FROM api_users WHERE username = $1",
-        )
-        .bind(&req.username)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| Status::internal(format!("Database error: {}", e)))?
-        .ok_or_else(|| Status::unauthenticated("Invalid username or password"))?;
-
-        if !user.enabled {
-            return Err(Status::unauthenticated("Account disabled"));
-        }
-
-        let parsed_hash = PasswordHash::new(&user.password_hash)
-            .map_err(|e| Status::internal(format!("Invalid password hash: {}", e)))?;
-        Argon2::default()
-            .verify_password(req.password.as_bytes(), &parsed_hash)
-            .map_err(|_| Status::unauthenticated("Invalid username or password"))?;
-
+        user_id: &str,
+        org_id: &str,
+        username: &str,
+    ) -> Result<(String, chrono::DateTime<Utc>), Status> {
         let now = Utc::now();
         let exp = now + chrono::Duration::hours(24);
         let claims = Claims {
-            sub: user.id.clone(),
-            org: user.organization_id.clone(),
-            username: user.username.clone(),
+            sub: user_id.to_string(),
+            org: org_id.to_string(),
+            username: username.to_string(),
             exp: exp.timestamp(),
             iat: now.timestamp(),
         };
-
         let token = encode(
             &Header::default(),
             &claims,
             &EncodingKey::from_secret(self.jwt_secret.as_bytes()),
         )
         .map_err(|e| Status::internal(format!("JWT error: {}", e)))?;
+        Ok((token, exp))
+    }
+}
 
-        let token_hash = format!("{:x}", Sha256::digest(token.as_bytes()));
-        sqlx::query(
-            "INSERT INTO api_tokens (user_id, token_hash, expires_at)
-             VALUES ($1::uuid, $2, $3)",
+#[tonic::async_trait]
+impl AuthService for AuthServiceImpl {
+    async fn login(
+        &self,
+        _request: Request<LoginRequest>,
+    ) -> Result<Response<LoginResponse>, Status> {
+        Err(Status::unimplemented("Use LoginWithGoogle instead"))
+    }
+
+    async fn login_with_google(
+        &self,
+        request: Request<LoginWithGoogleRequest>,
+    ) -> Result<Response<LoginResponse>, Status> {
+        let req = request.into_inner();
+
+        let row = sqlx::query!(
+            r#"
+            SELECT
+                u.id::text AS "id!",
+                uo.organization_id::text AS "organization_id!",
+                u.email AS "email!"
+            FROM app_users u
+            JOIN user_organizations uo ON uo.user_id = u.id AND uo.is_default = true
+            WHERE u.email = $1
+              AND u.deleted_at IS NULL
+            LIMIT 1
+            "#,
+            req.email,
         )
-        .bind(&user.id)
-        .bind(&token_hash)
-        .bind(exp)
-        .execute(&self.pool)
+        .fetch_optional(&self.pool)
         .await
-        .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
+        .map_err(|e| Status::internal(format!("Database error: {}", e)))?
+        .ok_or_else(|| Status::unauthenticated("User not found"))?;
+
+        let (token, exp) = self.issue_jwt(&row.id, &row.organization_id, &row.email)?;
 
         Ok(Response::new(LoginResponse {
             token,
@@ -101,36 +102,23 @@ impl AuthService for AuthServiceImpl {
     ) -> Result<Response<ValidateTokenResponse>, Status> {
         let req = request.into_inner();
 
-        let claims = jsonwebtoken::decode::<Claims>(
+        let result = jsonwebtoken::decode::<Claims>(
             &req.token,
             &jsonwebtoken::DecodingKey::from_secret(self.jwt_secret.as_bytes()),
             &jsonwebtoken::Validation::default(),
-        )
-        .map_err(|_| Status::unauthenticated("Invalid token"))?
-        .claims;
+        );
 
-        let token_hash = format!("{:x}", Sha256::digest(req.token.as_bytes()));
-        let exists: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM api_tokens
-             WHERE token_hash = $1 AND revoked = false AND expires_at > NOW())",
-        )
-        .bind(&token_hash)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
-
-        Ok(Response::new(ValidateTokenResponse {
-            valid: exists,
-            organization_id: if exists {
-                claims.org
-            } else {
-                String::new()
-            },
-            username: if exists {
-                claims.username
-            } else {
-                String::new()
-            },
-        }))
+        match result {
+            Ok(data) => Ok(Response::new(ValidateTokenResponse {
+                valid: true,
+                organization_id: data.claims.org,
+                username: data.claims.username,
+            })),
+            Err(_) => Ok(Response::new(ValidateTokenResponse {
+                valid: false,
+                organization_id: String::new(),
+                username: String::new(),
+            })),
+        }
     }
 }
