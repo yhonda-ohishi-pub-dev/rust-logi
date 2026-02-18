@@ -32,3 +32,7 @@ pub mod flickr {
 pub mod dvr_notifications {
     include!("logi.dvr_notifications.rs");
 }
+
+pub mod auth {
+    include!("logi.auth.rs");
+}

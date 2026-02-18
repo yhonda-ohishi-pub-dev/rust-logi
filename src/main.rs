@@ -13,12 +13,14 @@ use rust_logi::proto::health::health_server::HealthServer;
 use rust_logi::proto::dtakologs::dtakologs_service_server::DtakologsServiceServer;
 use rust_logi::proto::flickr::flickr_service_server::FlickrServiceServer;
 use rust_logi::proto::dvr_notifications::dvr_notifications_service_server::DvrNotificationsServiceServer;
+use rust_logi::proto::auth::auth_service_server::AuthServiceServer;
 use rust_logi::services::cam_files_service::CamFileExeStageServiceImpl;
 use rust_logi::services::flickr_service::FlickrConfig;
 use rust_logi::services::{
     CamFilesServiceImpl, CarInspectionFilesServiceImpl, CarInspectionServiceImpl,
     FilesServiceImpl, HealthServiceImpl, DtakologsServiceImpl, FlickrServiceImpl,
     DvrNotificationsServiceImpl,
+    AuthServiceImpl,
 };
 use rust_logi::storage::GcsClient;
 
@@ -92,6 +94,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         http_client.clone(),
         gcs_client.clone(),
     );
+    let auth_service = AuthServiceImpl::new(pool.clone(), config.jwt_secret.clone());
 
     // CORS layer for gRPC-Web
     let cors = CorsLayer::new()
@@ -126,6 +129,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(DtakologsServiceServer::new(dtakologs_service))
         .add_service(FlickrServiceServer::new(flickr_service))
         .add_service(DvrNotificationsServiceServer::new(dvr_notifications_service))
+        .add_service(AuthServiceServer::new(auth_service))
         .serve(addr)
         .await?;
 

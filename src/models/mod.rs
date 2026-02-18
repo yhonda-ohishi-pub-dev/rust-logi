@@ -6,6 +6,7 @@ pub mod ichiban_cars;
 pub mod dtakologs;
 pub mod dvr_notification;
 pub mod flickr_photo;
+pub mod api_user;
 
 pub use files::*;
 pub use car_inspection::*;
@@ -15,3 +16,4 @@ pub use ichiban_cars::*;
 pub use dtakologs::*;
 pub use dvr_notification::*;
 pub use flickr_photo::*;
+pub use api_user::*;

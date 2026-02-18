@@ -36,6 +36,7 @@ pub struct Config {
     pub dvr_notification_enabled: bool,
     pub dvr_lineworks_bot_url: Option<String>,
     pub cam_config: Option<CamConfig>,
+    pub jwt_secret: String,
 }
 
 impl Config {
@@ -60,6 +61,7 @@ impl Config {
                 .unwrap_or(false),
             dvr_lineworks_bot_url: env::var("DVR_LINEWORKS_BOT_URL").ok(),
             cam_config: CamConfig::from_env(),
+            jwt_secret: env::var("JWT_SECRET")?,
         })
     }
 
