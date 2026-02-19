@@ -189,23 +189,10 @@ where
                 if let Ok(value) = effective_org_id.parse() {
                     req.headers_mut().insert(ORG_HEADER, value);
                 }
-            } else {
-                // No valid JWT — fall back to x-organization-id header (backwards compatible)
-                // This allows existing clients (cf-grpc-proxy, grpcurl with GCP token) to work
-                let org_id = req
-                    .headers()
-                    .get(ORG_HEADER)
-                    .and_then(|v| v.to_str().ok())
-                    .filter(|s| !s.is_empty())
-                    .map(|s| s.to_string());
-
-                if org_id.is_none() {
-                    tracing::warn!("No valid JWT and no x-organization-id for {}", path);
-                    return Ok(grpc_status_response(Status::unauthenticated(
-                        "Missing authorization token",
-                    )));
-                }
             }
+            // No valid JWT — pass through (backwards compatible)
+            // Existing services use get_organization_from_request() which falls back to
+            // x-organization-id header or DEFAULT_ORGANIZATION_ID
 
             inner.call(req).await
         })
