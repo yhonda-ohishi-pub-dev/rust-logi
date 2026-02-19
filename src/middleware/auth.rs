@@ -129,78 +129,82 @@ where
                 .and_then(|v| v.strip_prefix("Bearer "))
                 .map(|s| s.to_string());
 
-            let token = match auth_header {
-                Some(t) => t,
-                None => {
-                    tracing::warn!("Missing Authorization header for {}", path);
+            // Try JWT authentication
+            let jwt_claims = auth_header.and_then(|token| {
+                jsonwebtoken::decode::<Claims>(
+                    &token,
+                    &DecodingKey::from_secret(jwt_secret.as_bytes()),
+                    &Validation::default(),
+                )
+                .ok()
+                .map(|data| data.claims)
+            });
+
+            if let Some(claims) = jwt_claims {
+                // JWT is valid — determine effective org_id
+                let requested_org = req
+                    .headers()
+                    .get(ORG_HEADER)
+                    .and_then(|v| v.to_str().ok())
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string());
+
+                let (effective_org_id, role) = if let Some(ref org_id) = requested_org {
+                    if *org_id != claims.org {
+                        // User is requesting a different org — verify membership
+                        match verify_membership(&pool, &claims.sub, org_id).await {
+                            Ok(role) => (org_id.clone(), role),
+                            Err(_) => {
+                                tracing::warn!(
+                                    "User {} not a member of org {}",
+                                    claims.sub,
+                                    org_id
+                                );
+                                return Ok(grpc_status_response(Status::permission_denied(
+                                    "Not a member of the requested organization",
+                                )));
+                            }
+                        }
+                    } else {
+                        match verify_membership(&pool, &claims.sub, org_id).await {
+                            Ok(role) => (org_id.clone(), role),
+                            Err(_) => (claims.org.clone(), "member".to_string()),
+                        }
+                    }
+                } else {
+                    match verify_membership(&pool, &claims.sub, &claims.org).await {
+                        Ok(role) => (claims.org.clone(), role),
+                        Err(_) => (claims.org.clone(), "member".to_string()),
+                    }
+                };
+
+                // Inject AuthenticatedUser into extensions
+                req.extensions_mut().insert(AuthenticatedUser {
+                    user_id: claims.sub,
+                    org_id: effective_org_id.clone(),
+                    role,
+                });
+
+                // Also set x-organization-id header so existing services can read it
+                if let Ok(value) = effective_org_id.parse() {
+                    req.headers_mut().insert(ORG_HEADER, value);
+                }
+            } else {
+                // No valid JWT — fall back to x-organization-id header (backwards compatible)
+                // This allows existing clients (cf-grpc-proxy, grpcurl with GCP token) to work
+                let org_id = req
+                    .headers()
+                    .get(ORG_HEADER)
+                    .and_then(|v| v.to_str().ok())
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string());
+
+                if org_id.is_none() {
+                    tracing::warn!("No valid JWT and no x-organization-id for {}", path);
                     return Ok(grpc_status_response(Status::unauthenticated(
                         "Missing authorization token",
                     )));
                 }
-            };
-
-            // Decode JWT
-            let claims = match jsonwebtoken::decode::<Claims>(
-                &token,
-                &DecodingKey::from_secret(jwt_secret.as_bytes()),
-                &Validation::default(),
-            ) {
-                Ok(data) => data.claims,
-                Err(e) => {
-                    tracing::warn!("Invalid JWT for {}: {}", path, e);
-                    return Ok(grpc_status_response(Status::unauthenticated(
-                        "Invalid or expired token",
-                    )));
-                }
-            };
-
-            // Determine effective org_id
-            let requested_org = req
-                .headers()
-                .get(ORG_HEADER)
-                .and_then(|v| v.to_str().ok())
-                .filter(|s| !s.is_empty())
-                .map(|s| s.to_string());
-
-            let (effective_org_id, role) = if let Some(ref org_id) = requested_org {
-                if *org_id != claims.org {
-                    // User is requesting a different org — verify membership
-                    match verify_membership(&pool, &claims.sub, org_id).await {
-                        Ok(role) => (org_id.clone(), role),
-                        Err(_) => {
-                            tracing::warn!(
-                                "User {} not a member of org {}",
-                                claims.sub,
-                                org_id
-                            );
-                            return Ok(grpc_status_response(Status::permission_denied(
-                                "Not a member of the requested organization",
-                            )));
-                        }
-                    }
-                } else {
-                    match verify_membership(&pool, &claims.sub, org_id).await {
-                        Ok(role) => (org_id.clone(), role),
-                        Err(_) => (claims.org.clone(), "member".to_string()),
-                    }
-                }
-            } else {
-                match verify_membership(&pool, &claims.sub, &claims.org).await {
-                    Ok(role) => (claims.org.clone(), role),
-                    Err(_) => (claims.org.clone(), "member".to_string()),
-                }
-            };
-
-            // Inject AuthenticatedUser into extensions
-            req.extensions_mut().insert(AuthenticatedUser {
-                user_id: claims.sub,
-                org_id: effective_org_id.clone(),
-                role,
-            });
-
-            // Also set x-organization-id header so existing services can read it
-            if let Ok(value) = effective_org_id.parse() {
-                req.headers_mut().insert(ORG_HEADER, value);
             }
 
             inner.call(req).await
