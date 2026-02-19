@@ -4,6 +4,7 @@ use std::sync::Arc;
 use rust_logi::config::Config;
 use rust_logi::db::create_pool;
 use rust_logi::http_client::HttpClient;
+use rust_logi::middleware::auth::AuthLayer;
 use rust_logi::proto::cam_files::cam_file_exe_stage_service_server::CamFileExeStageServiceServer;
 use rust_logi::proto::cam_files::cam_files_service_server::CamFilesServiceServer;
 use rust_logi::proto::car_inspection::car_inspection_files_service_server::CarInspectionFilesServiceServer;
@@ -14,13 +15,15 @@ use rust_logi::proto::dtakologs::dtakologs_service_server::DtakologsServiceServe
 use rust_logi::proto::flickr::flickr_service_server::FlickrServiceServer;
 use rust_logi::proto::dvr_notifications::dvr_notifications_service_server::DvrNotificationsServiceServer;
 use rust_logi::proto::auth::auth_service_server::AuthServiceServer;
+use rust_logi::proto::organization::organization_service_server::OrganizationServiceServer;
+use rust_logi::proto::member::member_service_server::MemberServiceServer;
 use rust_logi::services::cam_files_service::CamFileExeStageServiceImpl;
 use rust_logi::services::flickr_service::FlickrConfig;
 use rust_logi::services::{
     CamFilesServiceImpl, CarInspectionFilesServiceImpl, CarInspectionServiceImpl,
     FilesServiceImpl, HealthServiceImpl, DtakologsServiceImpl, FlickrServiceImpl,
     DvrNotificationsServiceImpl,
-    AuthServiceImpl,
+    AuthServiceImpl, OrganizationServiceImpl, MemberServiceImpl,
 };
 use rust_logi::storage::GcsClient;
 
@@ -94,7 +97,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         http_client.clone(),
         gcs_client.clone(),
     );
-    let auth_service = AuthServiceImpl::new(pool.clone(), config.jwt_secret.clone());
+    let auth_service = AuthServiceImpl::new(
+        pool.clone(),
+        config.jwt_secret.clone(),
+        config.google_client_id.clone(),
+    );
+    let organization_service = OrganizationServiceImpl::new(pool.clone());
+    let member_service = MemberServiceImpl::new(pool.clone(), config.jwt_secret.clone());
+
+    // Auth middleware layer
+    let auth_layer = AuthLayer::new(pool.clone(), config.jwt_secret.clone());
 
     // CORS layer for gRPC-Web
     let cors = CorsLayer::new()
@@ -117,6 +129,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .accept_http1(true) // Required for gRPC-Web
         .layer(cors)
         .layer(tonic_web::GrpcWebLayer::new()) // Enable gRPC-Web
+        .layer(auth_layer) // JWT authentication
         .add_service(reflection_service)
         .add_service(FilesServiceServer::new(files_service))
         .add_service(CarInspectionServiceServer::new(car_inspection_service))
@@ -130,6 +143,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(FlickrServiceServer::new(flickr_service))
         .add_service(DvrNotificationsServiceServer::new(dvr_notifications_service))
         .add_service(AuthServiceServer::new(auth_service))
+        .add_service(OrganizationServiceServer::new(organization_service))
+        .add_service(MemberServiceServer::new(member_service))
         .serve(addr)
         .await?;
 

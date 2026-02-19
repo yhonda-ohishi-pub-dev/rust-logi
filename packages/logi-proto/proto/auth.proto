@@ -2,23 +2,37 @@ syntax = "proto3";
 package logi.auth;
 
 service AuthService {
-  rpc Login(LoginRequest) returns (LoginResponse);
-  rpc LoginWithGoogle(LoginWithGoogleRequest) returns (LoginResponse);
+  // Sign up with Google ID token — creates user + organization (user becomes admin)
+  rpc SignUpWithGoogle(SignUpWithGoogleRequest) returns (AuthResponse);
+  // Login with Google ID token (existing user)
+  rpc LoginWithGoogle(LoginWithGoogleRequest) returns (AuthResponse);
+  // Login with username/password (invited users)
+  rpc Login(LoginRequest) returns (AuthResponse);
+  // Validate JWT token
   rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse);
 }
 
-message LoginRequest {
-  string username = 1;
-  string password = 2;
+message SignUpWithGoogleRequest {
+  string id_token = 1;
+  string organization_name = 2;
+  string organization_slug = 3;
 }
 
 message LoginWithGoogleRequest {
-  string email = 1;
+  string id_token = 1;
 }
 
-message LoginResponse {
+message LoginRequest {
+  string organization_id = 1;
+  string username = 2;
+  string password = 3;
+}
+
+message AuthResponse {
   string token = 1;
   string expires_at = 2;
+  string user_id = 3;
+  string organization_id = 4;
 }
 
 message ValidateTokenRequest {
@@ -28,5 +42,6 @@ message ValidateTokenRequest {
 message ValidateTokenResponse {
   bool valid = 1;
   string organization_id = 2;
-  string username = 3;
+  string user_id = 3;
+  string username = 4;
 }

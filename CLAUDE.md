@@ -2,6 +2,13 @@
 
 hono-logiのRust実装（gRPC-Web対応）
 
+## 最新のhandover
+
+新しいセッション開始時は必ずここに記載されたファイルを読んで前回の状況を把握すること。
+handoverの全タスクが完了したら `handover/completed/` に移動し、ここのパスを削除すること。
+
+- `handover/2026-02-19_04-15.md` — 組織管理・認証システム デプロイ前検証
+
 ## データベース
 
 - **DB**: Cloud SQL PostgreSQL (`cloudsql-sv:asia-northeast1:postgres-prod`)

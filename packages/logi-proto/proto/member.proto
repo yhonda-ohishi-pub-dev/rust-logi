@@ -1,0 +1,68 @@
+syntax = "proto3";
+package logi.member;
+
+import "common.proto";
+import "auth.proto";
+
+service MemberService {
+  // Invite user to organization (admin only)
+  rpc InviteUser(InviteUserRequest) returns (InviteUserResponse);
+  // Accept invitation and create password credentials (no auth required)
+  rpc AcceptInvitation(AcceptInvitationRequest) returns (logi.auth.AuthResponse);
+  // List members of current organization
+  rpc ListMembers(logi.common.Empty) returns (ListMembersResponse);
+  // Remove a member from organization (admin only, last admin protected)
+  rpc RemoveMember(RemoveMemberRequest) returns (logi.common.Empty);
+  // Promote member to admin (admin only)
+  rpc PromoteToAdmin(MemberIdRequest) returns (MemberResponse);
+  // Demote admin to member (admin only, fails if last admin)
+  rpc DemoteFromAdmin(MemberIdRequest) returns (MemberResponse);
+  // Transfer admin role: demote self + promote target (for last admin)
+  rpc TransferAdmin(TransferAdminRequest) returns (logi.common.Empty);
+}
+
+message Member {
+  string user_id = 1;
+  string email = 2;
+  string display_name = 3;
+  string role = 4;
+  string joined_at = 5;
+}
+
+message InviteUserRequest {
+  string email = 1;
+  string role = 2;
+}
+
+message InviteUserResponse {
+  string invitation_id = 1;
+  string token = 2;
+  string expires_at = 3;
+}
+
+message AcceptInvitationRequest {
+  string token = 1;
+  string display_name = 2;
+  string username = 3;
+  string password = 4;
+}
+
+message ListMembersResponse {
+  repeated Member members = 1;
+}
+
+message RemoveMemberRequest {
+  string user_id = 1;
+}
+
+message MemberIdRequest {
+  string user_id = 1;
+}
+
+message MemberResponse {
+  Member member = 1;
+}
+
+message TransferAdminRequest {
+  string target_user_id = 1;
+}

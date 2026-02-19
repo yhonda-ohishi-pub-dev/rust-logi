@@ -6,6 +6,8 @@ pub mod dtakologs_service;
 pub mod flickr_service;
 pub mod dvr_notifications_service;
 pub mod auth_service;
+pub mod organization_service;
+pub mod member_service;
 
 pub use files_service::FilesServiceImpl;
 pub use car_inspection_service::CarInspectionServiceImpl;
@@ -16,3 +18,5 @@ pub use dtakologs_service::DtakologsServiceImpl;
 pub use flickr_service::FlickrServiceImpl;
 pub use dvr_notifications_service::DvrNotificationsServiceImpl;
 pub use auth_service::AuthServiceImpl;
+pub use organization_service::OrganizationServiceImpl;
+pub use member_service::MemberServiceImpl;

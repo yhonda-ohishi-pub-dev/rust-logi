@@ -2,6 +2,8 @@ use sqlx::{PgConnection, PgPool, Executor};
 use std::future::Future;
 use tonic::metadata::MetadataMap;
 
+use crate::middleware::AuthenticatedUser;
+
 /// Default organization ID (UUID) for single-tenant mode
 /// This matches the default organization created in migration 00001
 pub const DEFAULT_ORGANIZATION_ID: &str = "00000000-0000-0000-0000-000000000001";
@@ -21,8 +23,13 @@ pub fn get_organization_from_metadata(metadata: &MetadataMap) -> String {
 }
 
 /// Extracts organization_id from gRPC request.
-/// Falls back to DEFAULT_ORGANIZATION_ID if not provided.
+/// Prefers AuthenticatedUser from middleware, falls back to x-organization-id header.
 pub fn get_organization_from_request<T>(request: &tonic::Request<T>) -> String {
+    // 1. Prefer AuthenticatedUser injected by auth middleware
+    if let Some(user) = request.extensions().get::<AuthenticatedUser>() {
+        return user.org_id.clone();
+    }
+    // 2. Fall back to header (for development/testing without auth middleware)
     get_organization_from_metadata(request.metadata())
 }
 

@@ -19,6 +19,7 @@ hono-logi/
 lineworks-bot-rust_ref/
 nuxt-pwa-carins_ref
 smb-upload-worker/
+cf-grpc-proxy_ref
 
 # Cloud SQL Proxy binary
 cloud-sql-proxy

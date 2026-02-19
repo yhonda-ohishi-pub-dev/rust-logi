@@ -21,6 +21,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 format!("{}/flickr.proto", proto_dir),
                 format!("{}/dvr_notifications.proto", proto_dir),
                 format!("{}/auth.proto", proto_dir),
+                format!("{}/organization.proto", proto_dir),
+                format!("{}/member.proto", proto_dir),
             ],
             &[proto_dir],
         )?;

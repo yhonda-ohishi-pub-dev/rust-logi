@@ -36,3 +36,11 @@ pub mod dvr_notifications {
 pub mod auth {
     include!("logi.auth.rs");
 }
+
+pub mod organization {
+    include!("logi.organization.rs");
+}
+
+pub mod member {
+    include!("logi.member.rs");
+}

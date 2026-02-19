@@ -7,6 +7,9 @@ pub mod dtakologs;
 pub mod dvr_notification;
 pub mod flickr_photo;
 pub mod api_user;
+pub mod app_user;
+pub mod organization_model;
+pub mod password_credential;
 
 pub use files::*;
 pub use car_inspection::*;
@@ -17,3 +20,6 @@ pub use dtakologs::*;
 pub use dvr_notification::*;
 pub use flickr_photo::*;
 pub use api_user::*;
+pub use app_user::*;
+pub use organization_model::*;
+pub use password_credential::*;

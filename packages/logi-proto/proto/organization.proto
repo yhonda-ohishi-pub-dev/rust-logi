@@ -1,0 +1,33 @@
+syntax = "proto3";
+package logi.organization;
+
+import "common.proto";
+
+service OrganizationService {
+  // List organizations the authenticated user belongs to
+  rpc ListMyOrganizations(logi.common.Empty) returns (ListOrganizationsResponse);
+  // Update organization name/slug (admin only)
+  rpc UpdateOrganization(UpdateOrganizationRequest) returns (OrganizationResponse);
+}
+
+message Organization {
+  string id = 1;
+  string name = 2;
+  string slug = 3;
+  string role = 4;
+  string created_at = 5;
+}
+
+message ListOrganizationsResponse {
+  repeated Organization organizations = 1;
+}
+
+message UpdateOrganizationRequest {
+  string organization_id = 1;
+  string name = 2;
+  string slug = 3;
+}
+
+message OrganizationResponse {
+  Organization organization = 1;
+}
