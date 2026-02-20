@@ -65,6 +65,8 @@ source .env && sqlx migrate run
   - `auth-worker/` → /home/yhonda/js/auth-worker（JWT認証）
 - `services/` - バックエンドサービス参照（symlink）
   - `browser-render-rust/` → /home/yhonda/rust/browser-render_rust（DVRレンダリング）
+    - `rust-scraper/` - git submodule（車両データスクレイピング）
+      - `data/` - スクレイピング結果JSON（gitignore）
   - `lineworks-bot-rust/` → /home/yhonda/rust/lineworks-bot-rust（LINE WORKS Bot）
 - `legacy/` - レガシー参照
   - `hono-logi/` → /home/yhonda/js/hono-logi（旧Cloudflare Workers版）
