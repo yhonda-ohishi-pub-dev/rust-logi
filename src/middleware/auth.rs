@@ -121,12 +121,12 @@ where
                 return inner.call(req).await;
             }
 
-            // Extract Authorization header
+            // Extract JWT from x-auth-token header
+            // (Authorization header contains GCP IAM token set by cf-grpc-proxy)
             let auth_header = req
                 .headers()
-                .get("authorization")
+                .get("x-auth-token")
                 .and_then(|v| v.to_str().ok())
-                .and_then(|v| v.strip_prefix("Bearer "))
                 .map(|s| s.to_string());
 
             // Try JWT authentication
