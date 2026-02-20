@@ -21,7 +21,7 @@ use rust_logi::services::cam_files_service::CamFileExeStageServiceImpl;
 use rust_logi::services::flickr_service::FlickrConfig;
 use rust_logi::services::{
     CamFilesServiceImpl, CarInspectionFilesServiceImpl, CarInspectionServiceImpl,
-    FilesServiceImpl, HealthServiceImpl, DtakologsServiceImpl, FlickrServiceImpl,
+    FileAutoParser, FilesServiceImpl, HealthServiceImpl, DtakologsServiceImpl, FlickrServiceImpl,
     DvrNotificationsServiceImpl,
     AuthServiceImpl, OrganizationServiceImpl, MemberServiceImpl,
 };
@@ -75,7 +75,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let http_client = Arc::new(HttpClient::new());
 
     // Create services
-    let files_service = FilesServiceImpl::new(pool.clone(), gcs_client.clone());
+    let file_auto_parser = Arc::new(FileAutoParser::new(pool.clone()));
+    let files_service = FilesServiceImpl::new(pool.clone(), gcs_client.clone(), file_auto_parser);
     let car_inspection_service = CarInspectionServiceImpl::new(
         pool.clone(),
         http_client.clone(),

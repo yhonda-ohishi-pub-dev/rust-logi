@@ -1,3 +1,4 @@
+pub mod file_auto_parser;
 pub mod files_service;
 pub mod car_inspection_service;
 pub mod cam_files_service;
@@ -9,6 +10,7 @@ pub mod auth_service;
 pub mod organization_service;
 pub mod member_service;
 
+pub use file_auto_parser::FileAutoParser;
 pub use files_service::FilesServiceImpl;
 pub use car_inspection_service::CarInspectionServiceImpl;
 pub use car_inspection_service::CarInspectionFilesServiceImpl;

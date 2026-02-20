@@ -1010,14 +1010,24 @@ impl CarInspectionFilesService for CarInspectionFilesServiceImpl {
         set_current_organization(&mut conn, &organization_id).await
             .map_err(|e| Status::internal(format!("Failed to set organization context: {}", e)))?;
 
-        let result = sqlx::query_as::<_, CarInspectionFileModel>(
+        // hono-logi準拠: JSON→car_inspection_files_a、PDF→car_inspection_files_b
+        let table = if file.r#type == "application/pdf" {
+            "car_inspection_files_b"
+        } else {
+            "car_inspection_files_a"
+        };
+
+        let sql = format!(
             r#"
-            INSERT INTO car_inspection_files_a (uuid, organization_id, type, "ElectCertMgNo", "GrantdateE", "GrantdateY", "GrantdateM", "GrantdateD")
+            INSERT INTO {} (uuid, organization_id, type, "ElectCertMgNo", "GrantdateE", "GrantdateY", "GrantdateM", "GrantdateD")
             VALUES ($1, current_setting('app.current_organization_id')::uuid, $2, $3, $4, $5, $6, $7)
             ON CONFLICT (uuid) DO UPDATE SET modified_at = NOW()
             RETURNING *
             "#,
-        )
+            table,
+        );
+
+        let result = sqlx::query_as::<_, CarInspectionFileModel>(&sql)
         .bind(&file.uuid)
         .bind(&file.r#type)
         .bind(&file.elect_cert_mg_no)

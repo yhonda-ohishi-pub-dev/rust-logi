@@ -12,16 +12,18 @@ use crate::proto::files::{
     CreateFileRequest, DeleteFileRequest, DownloadFileRequest, File, FileChunk, FileResponse,
     GetFileRequest, ListFilesRequest, ListFilesResponse, RestoreFileRequest, RestoreFileResponse,
 };
+use crate::services::file_auto_parser::FileAutoParser;
 use crate::storage::{GcsClient, RestoreStatus};
 
 pub struct FilesServiceImpl {
     pool: PgPool,
     gcs_client: Option<Arc<GcsClient>>,
+    file_auto_parser: Arc<FileAutoParser>,
 }
 
 impl FilesServiceImpl {
-    pub fn new(pool: PgPool, gcs_client: Option<Arc<GcsClient>>) -> Self {
-        Self { pool, gcs_client }
+    pub fn new(pool: PgPool, gcs_client: Option<Arc<GcsClient>>, file_auto_parser: Arc<FileAutoParser>) -> Self {
+        Self { pool, gcs_client, file_auto_parser }
     }
 
     fn model_to_proto(model: &FileModel) -> File {
@@ -203,16 +205,38 @@ impl FilesService for FilesServiceImpl {
             .await
             .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
 
+            // 自動解析（バックグラウンド）— JSON or PDF
+            if req.r#type == "application/json" {
+                let parser = self.file_auto_parser.clone();
+                let uuid_clone = uuid.clone();
+                let org_clone = organization_id.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = parser.process_json_upload(&uuid_clone, &data, &org_clone).await {
+                        tracing::error!("JSON auto-parse failed for {}: {}", uuid_clone, e);
+                    }
+                });
+            } else if req.r#type == "application/pdf" {
+                let parser = self.file_auto_parser.clone();
+                let uuid_clone = uuid.clone();
+                let org_clone = organization_id.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = parser.process_pdf_upload(&uuid_clone, &data, &org_clone).await {
+                        tracing::error!("PDF auto-parse failed for {}: {}", uuid_clone, e);
+                    }
+                });
+            }
+
             return Ok(Response::new(FileResponse {
                 file: Some(Self::model_to_proto(&result)),
             }));
         }
 
         // GCSが無効な場合は従来通りDBにblobを保存
-        let blob = if !req.content.is_empty() {
+        let raw_content = req.content;
+        let blob = if !raw_content.is_empty() {
             Some(base64::Engine::encode(
                 &base64::engine::general_purpose::STANDARD,
-                &req.content,
+                &raw_content,
             ))
         } else {
             req.blob_base64
@@ -240,6 +264,27 @@ impl FilesService for FilesServiceImpl {
         .fetch_one(&mut *conn)
         .await
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
+
+        // 自動解析（バックグラウンド）— JSON or PDF
+        if req.r#type == "application/json" && !raw_content.is_empty() {
+            let parser = self.file_auto_parser.clone();
+            let uuid_clone = uuid.clone();
+            let org_clone = organization_id.clone();
+            tokio::spawn(async move {
+                if let Err(e) = parser.process_json_upload(&uuid_clone, &raw_content, &org_clone).await {
+                    tracing::error!("JSON auto-parse failed for {}: {}", uuid_clone, e);
+                }
+            });
+        } else if req.r#type == "application/pdf" && !raw_content.is_empty() {
+            let parser = self.file_auto_parser.clone();
+            let uuid_clone = uuid.clone();
+            let org_clone = organization_id.clone();
+            tokio::spawn(async move {
+                if let Err(e) = parser.process_pdf_upload(&uuid_clone, &raw_content, &org_clone).await {
+                    tracing::error!("PDF auto-parse failed for {}: {}", uuid_clone, e);
+                }
+            });
+        }
 
         Ok(Response::new(FileResponse {
             file: Some(Self::model_to_proto(&result)),

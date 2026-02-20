@@ -65,6 +65,12 @@ md-5 = "0.10"
 # XML parsing (for camera directory listing responses)
 quick-xml = "0.37"
 
+# PDF text extraction
+pdf-extract = "0.10"
+
+# Regex
+regex = "1"
+
 [build-dependencies]
 tonic-build = "0.12"
 
