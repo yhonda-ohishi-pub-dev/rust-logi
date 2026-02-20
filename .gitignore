@@ -14,12 +14,11 @@ src/proto/*.rs
 *.swp
 *.swo
 
-# Cloned reference repository
-hono-logi/
-lineworks-bot-rust_ref/
-nuxt-pwa-carins_ref
-smb-upload-worker/
-cf-grpc-proxy_ref
+# Reference repositories (symlinks + legacy dirs)
+front/
+workers/
+services/
+legacy/
 
 # Cloud SQL Proxy binary
 cloud-sql-proxy

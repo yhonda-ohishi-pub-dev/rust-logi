@@ -7,7 +7,7 @@ hono-logiのRust実装（gRPC-Web対応）
 新しいセッション開始時は必ずここに記載されたファイルを読んで前回の状況を把握すること。
 handoverの全タスクが完了したら `handover/completed/` に移動し、ここのパスを削除すること。
 
-- `handover/2026-02-19_04-15.md` — 組織管理・認証システム デプロイ前検証
+(現在アクティブな引き継ぎなし)
 
 ## データベース
 
@@ -55,9 +55,20 @@ source .env && sqlx migrate run
   - `file-car-inspection-linkage.md` - ファイルと車検証の紐づき構造（テーブル関係、再アップロード時の挙動）
 - `convert_and_import.py` - hono-logiからのデータ移行スクリプト
 - `.env` - 環境変数 (DATABASE_URL等)
-- `hono-api-test_ref/` - 参照用: hono-api-test リポジトリ (https://github.com/yhonda-ohishi/hono-api-test.git)
-- `hono-logi/` - 参照用: 元のhono-logi実装（Cloudflare Workers版）
-- `nuxt-pwa-carins_ref/` - 参照用: フロントエンド (symlink → /home/yhonda/js/nuxt-pwa-carins)
+- `front/` - フロントエンド参照（symlink）
+  - `nuxt-pwa-carins/` → /home/yhonda/js/nuxt-pwa-carins（メインUI）
+  - `nuxt-dtako-logs/` → /home/yhonda/js/nuxt_dtako_logs（DTakoログビューワー）
+- `workers/` - Cloudflare Workers参照（symlink）
+  - `cf-grpc-proxy/` → /home/yhonda/js/nuxt_dtako_logs/cf-grpc-proxy（gRPCプロキシ）
+  - `smb-upload-worker/` → /home/yhonda/js/smb-upload-worker（SMBアップロード）
+  - `auth-worker/` → /home/yhonda/js/auth-worker（JWT認証）
+- `services/` - バックエンドサービス参照（symlink）
+  - `browser-render-rust/` → /home/yhonda/rust/browser-render_rust（DVRレンダリング）
+  - `lineworks-bot-rust/` → /home/yhonda/rust/lineworks-bot-rust（LINE WORKS Bot）
+- `legacy/` - レガシー参照
+  - `hono-logi/` → /home/yhonda/js/hono-logi（旧Cloudflare Workers版）
+  - `hono-api-test/` — 実体ディレクトリ
+  - `browser-render-go/` — 実体ディレクトリ
 
 ## データ移行 (convert_and_import.py)
 
@@ -288,7 +299,7 @@ DVR_LINEWORKS_BOT_URL=https://lineworks-bot-rust-566bls5vfq-an.a.run.app
 - `src/services/dvr_notifications_service.rs` - サービス実装
 - `src/models/dvr_notification.rs` - モデル
 - `migrations/00015_create_dvr_notifications.sql` - マイグレーション
-- `lineworks-bot-rust_ref/` - LINE WORKS Bot参照
+- `services/lineworks-bot-rust/` - LINE WORKS Bot参照
 
 ---
 
@@ -346,18 +357,18 @@ DVR通知受信 → DB保存(pending) → LINE通知 → tokio::spawn
 ### 完了
 - [x] Phase 1: `packages/logi-proto/proto/dtakologs.proto`に`BulkCreate` RPC追加
 - [x] Phase 1: `src/services/dtakologs_service.rs`に`bulk_create`実装
-- [x] Phase 2: `browser-render-rust_ref/build.rs`にlogiプロトコンパイル追加
-- [x] Phase 2: `browser-render-rust_ref/src/lib.rs`にlogiモジュール追加
-- [x] Phase 2: `browser-render-rust_ref/src/config.rs`に`rust_logi_url`, `rust_logi_organization_id`追加
-- [x] Phase 2: `browser-render-rust_ref/src/browser/renderer.rs`に`send_to_rust_logi`メソッド追加
+- [x] Phase 2: `services/browser-render-rust/build.rs`にlogiプロトコンパイル追加
+- [x] Phase 2: `services/browser-render-rust/src/lib.rs`にlogiモジュール追加
+- [x] Phase 2: `services/browser-render-rust/src/config.rs`に`rust_logi_url`, `rust_logi_organization_id`追加
+- [x] Phase 2: `services/browser-render-rust/src/browser/renderer.rs`に`send_to_rust_logi`メソッド追加
 
 ### 参照リポジトリ
-- `browser-render-rust_ref/` - https://github.com/yhonda-ohishi-pub-dev/browser-render-rust.git
-- `browser_render_go_ref/` - https://github.com/yhonda-ohishi/browser_render_go.git
-- `hono-api-test_ref/` - https://github.com/yhonda-ohishi/hono-api-test.git
-- `hono-logi/` - 元のhono-logi実装（Cloudflare Workers版）
-- `lineworks-bot-rust_ref/` - https://github.com/yhonda-ohishi-pub-dev/lineworks-bot-rust.git
-- `nuxt-pwa-carins_ref/` - symlink → /home/yhonda/js/nuxt-pwa-carins（フロントエンド）
+- `services/browser-render-rust/` - https://github.com/yhonda-ohishi-pub-dev/browser-render-rust.git
+- `legacy/browser-render-go/` - https://github.com/yhonda-ohishi/browser_render_go.git
+- `legacy/hono-api-test/` - https://github.com/yhonda-ohishi/hono-api-test.git
+- `legacy/hono-logi/` - 元のhono-logi実装（Cloudflare Workers版）
+- `services/lineworks-bot-rust/` - https://github.com/yhonda-ohishi-pub-dev/lineworks-bot-rust.git
+- `front/nuxt-pwa-carins/` - /home/yhonda/js/nuxt-pwa-carins（フロントエンド）
 
 ### 注意事項
 - `RUST_LOGI_URL`と`RUST_LOGI_ORGANIZATION_ID`は必須（デフォルト値なし）
