@@ -55,6 +55,7 @@ source .env && sqlx migrate run
   - `file-car-inspection-linkage.md` - ファイルと車検証の紐づき構造（テーブル関係、再アップロード時の挙動）
 - `convert_and_import.py` - hono-logiからのデータ移行スクリプト
 - `.env` - 環境変数 (DATABASE_URL等)
+- `rust-logi.code-workspace` - VSCodeマルチルートワークスペース（全参照リポを含む）
 - `front/` - フロントエンド参照（symlink）
   - `nuxt-pwa-carins/` → /home/yhonda/js/nuxt-pwa-carins（メインUI）
   - `nuxt-dtako-logs/` → /home/yhonda/js/nuxt_dtako_logs（DTakoログビューワー）
