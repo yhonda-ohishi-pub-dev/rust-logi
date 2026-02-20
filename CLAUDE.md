@@ -68,6 +68,7 @@ source .env && sqlx migrate run
     - `rust-scraper/` - git submodule（車両データスクレイピング）
       - `data/` - スクレイピング結果JSON（gitignore）
   - `lineworks-bot-rust/` → /home/yhonda/rust/lineworks-bot-rust（LINE WORKS Bot）
+  - `smb-watch/` → /home/yhonda/rust/smb-watch（SMB監視・ファイルアップロード）
 - `legacy/` - レガシー参照
   - `hono-logi/` → /home/yhonda/js/hono-logi（旧Cloudflare Workers版）
   - `hono-api-test/` — 実体ディレクトリ
