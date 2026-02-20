@@ -41,7 +41,7 @@ jobs:
         working-directory: packages/logi-proto
         run: |
           COMMIT_COUNT=$(git rev-list --count HEAD -- packages/logi-proto/ proto/)
-          OFFSET=16  # Skip past manually-published 0.1.0-0.1.15
+          OFFSET=18  # Skip past manually-published + CI runner count adjustment
           VERSION="0.1.$((COMMIT_COUNT + OFFSET))"
           npm version "$VERSION" --no-git-tag-version --allow-same-version
           echo "VERSION=$VERSION" >> $GITHUB_ENV
