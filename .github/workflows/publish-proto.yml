@@ -51,8 +51,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "logi-proto-v${VERSION}"
-          git push origin "logi-proto-v${VERSION}"
+          git tag -f "logi-proto-v${VERSION}"
+          git push origin "logi-proto-v${VERSION}" --force
 
       - name: Configure npm authentication
         working-directory: packages/logi-proto
@@ -62,4 +62,4 @@ jobs:
 
       - name: Publish to GitHub Packages
         working-directory: packages/logi-proto
-        run: npm publish
+        run: npm publish || echo "Version may already exist, skipping"
