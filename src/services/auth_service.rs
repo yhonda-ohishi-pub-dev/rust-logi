@@ -205,7 +205,7 @@ impl AuthService for AuthServiceImpl {
             .map_err(|e| Status::unauthenticated(format!("Google auth failed: {}", e)))?;
 
         // 2. Look up user via oauth_accounts
-        let row: (String, String, String) = sqlx::query_as(
+        let row: Option<(String, String, String)> = sqlx::query_as(
             "SELECT u.id::text, uo.organization_id::text, u.email
              FROM oauth_accounts oa
              JOIN app_users u ON u.id = oa.app_user_id
@@ -216,10 +216,51 @@ impl AuthService for AuthServiceImpl {
         .bind(&google_claims.sub)
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| Status::internal(format!("Database error: {}", e)))?
-        .ok_or_else(|| Status::unauthenticated("No account found. Please sign up first."))?;
+        .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
 
-        let (user_id, org_id, email) = row;
+        let (user_id, org_id, email) = if let Some(row) = row {
+            row
+        } else {
+            // Auto-register: create user in default organization
+            let default_org_id = "00000000-0000-0000-0000-000000000001";
+            let mut tx = self.pool.begin().await
+                .map_err(|e| Status::internal(format!("Transaction error: {}", e)))?;
+
+            let (new_user_id,): (String,) = sqlx::query_as(
+                "INSERT INTO app_users (email, display_name, avatar_url) VALUES ($1, $2, $3) RETURNING id::text",
+            )
+            .bind(&google_claims.email)
+            .bind(google_claims.name.as_deref().unwrap_or(&google_claims.email))
+            .bind(google_claims.picture.as_deref())
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to create user: {}", e)))?;
+
+            sqlx::query(
+                "INSERT INTO oauth_accounts (app_user_id, provider, provider_account_id) VALUES ($1::uuid, 'google', $2)",
+            )
+            .bind(&new_user_id)
+            .bind(&google_claims.sub)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to create oauth account: {}", e)))?;
+
+            sqlx::query(
+                "INSERT INTO user_organizations (user_id, organization_id, role, is_default) VALUES ($1::uuid, $2::uuid, 'admin', true)",
+            )
+            .bind(&new_user_id)
+            .bind(default_org_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to create user-org link: {}", e)))?;
+
+            tx.commit().await
+                .map_err(|e| Status::internal(format!("Transaction commit error: {}", e)))?;
+
+            tracing::info!("Auto-registered Google user {} in default org", &google_claims.email);
+            (new_user_id, default_org_id.to_string(), google_claims.email.clone())
+        };
+
         let (token, exp) = self.issue_jwt(&user_id, &org_id, &email)?;
 
         Ok(Response::new(AuthResponse {

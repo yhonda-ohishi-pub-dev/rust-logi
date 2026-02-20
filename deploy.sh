@@ -21,7 +21,7 @@ gcloud run deploy $SERVICE_NAME \
   --no-allow-unauthenticated \
   --add-cloudsql-instances cloudsql-sv:asia-northeast1:postgres-prod \
   --set-secrets "DATABASE_URL=rust-logi-database-url:latest,JWT_SECRET=rust-logi-jwt-secret:latest" \
-  --set-env-vars "SERVER_PORT=8080,GCS_BUCKET=rust-logi-files,DVR_NOTIFICATION_ENABLED=true,DVR_LINEWORKS_BOT_URL=https://lineworks-bot-rust-566bls5vfq-an.a.run.app,FLICKR_CONSUMER_KEY=ce52fba1099524b9eb0fb0b1913547b5,FLICKR_CONSUMER_SECRET=74de269c7d0b550f,CAM_DIGEST_USER=admin,CAM_DIGEST_PASS=Ohishi55,CAM_MACHINE_NAME=TS-NA230WP-48,CAM_SDCARD_CGI=https://car.mtamaramu.com/camera-cgi/admin/sdcard.cgi?action=generate&pagesize=1000&pagenum=1&dir=,CAM_MP4_CGI=https://car.mtamaramu.com/playmp4.cgi?storage=sd&file=/,CAM_JPG_CGI=https://car.mtamaramu.com/snapshot.cgi?storage=sd&file=/" \
+  --set-env-vars "SERVER_PORT=8080,GCS_BUCKET=rust-logi-files,DVR_NOTIFICATION_ENABLED=true,DVR_LINEWORKS_BOT_URL=https://lineworks-bot-rust-566bls5vfq-an.a.run.app,FLICKR_CONSUMER_KEY=ce52fba1099524b9eb0fb0b1913547b5,FLICKR_CONSUMER_SECRET=74de269c7d0b550f,CAM_DIGEST_USER=admin,CAM_DIGEST_PASS=Ohishi55,CAM_MACHINE_NAME=TS-NA230WP-48,CAM_SDCARD_CGI=https://car.mtamaramu.com/camera-cgi/admin/sdcard.cgi?action=generate&pagesize=1000&pagenum=1&dir=,CAM_MP4_CGI=https://car.mtamaramu.com/playmp4.cgi?storage=sd&file=/,CAM_JPG_CGI=https://car.mtamaramu.com/snapshot.cgi?storage=sd&file=/,GOOGLE_CLIENT_ID=747065218280-9httjrj60r8phntvba226vcr1m6u95tg.apps.googleusercontent.com" \
   --port 8080
 
 echo "=== Deploy complete ==="
