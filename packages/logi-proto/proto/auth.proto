@@ -62,6 +62,7 @@ message ResolveSsoProviderResponse {
   string provider = 4;
   string external_org_id = 5;
   string authorize_url = 6;     // pre-built authorize URL for convenience
+  string woff_id = 7;           // WOFF SDK app ID for this tenant
 }
 
 message LoginWithSsoProviderRequest {
@@ -69,4 +70,5 @@ message LoginWithSsoProviderRequest {
   string external_org_id = 2;
   string code = 3;
   string redirect_uri = 4;
+  string access_token = 5;    // WOFF access token (alternative to code+redirect_uri)
 }

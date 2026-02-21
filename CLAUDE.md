@@ -8,6 +8,7 @@ hono-logiのRust実装（gRPC-Web対応）
 handoverの全タスクが完了したら `handover/completed/` に移動し、ここのパスを削除すること。
 
 - `handover/2026-02-21_03-31.md` — LINE WORKS SSO OAuth 実装（Phase 1-5 完了・全デプロイ済み / Phase 6 未着手）
+- `handover/2026-02-21_14-59.md` — WOFF SDK Integration（Phase 1-3 実装済み / WOFF IDマルチテナント問題で設計再検討必要）
 
 ## データベース
 

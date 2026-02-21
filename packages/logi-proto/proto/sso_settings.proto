@@ -36,6 +36,7 @@ message SsoConfigResponse {
   bool enabled = 5;
   string created_at = 6;
   string updated_at = 7;
+  string woff_id = 8;
 }
 
 message UpsertSsoConfigRequest {
@@ -44,4 +45,5 @@ message UpsertSsoConfigRequest {
   string client_secret = 3;
   string external_org_id = 4;
   bool enabled = 5;
+  string woff_id = 6;
 }

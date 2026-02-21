@@ -69,9 +69,9 @@ impl SsoSettingsService for SsoSettingsServiceImpl {
             .await
             .map_err(|e| Status::internal(format!("RLS error: {}", e)))?;
 
-        let row: Option<(String, String, String, bool, String, String)> = sqlx::query_as(
+        let row: Option<(String, String, String, bool, String, String, Option<String>)> = sqlx::query_as(
             "SELECT provider, client_id, external_org_id, enabled,
-                    created_at::text, updated_at::text
+                    created_at::text, updated_at::text, woff_id
              FROM sso_provider_configs
              WHERE organization_id = $1::uuid AND provider = $2",
         )
@@ -82,7 +82,7 @@ impl SsoSettingsService for SsoSettingsServiceImpl {
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
 
         match row {
-            Some((provider, client_id, external_org_id, enabled, created_at, updated_at)) => {
+            Some((provider, client_id, external_org_id, enabled, created_at, updated_at, woff_id)) => {
                 Ok(Response::new(SsoConfigResponse {
                     provider,
                     client_id,
@@ -91,6 +91,7 @@ impl SsoSettingsService for SsoSettingsServiceImpl {
                     enabled,
                     created_at,
                     updated_at,
+                    woff_id: woff_id.unwrap_or_default(),
                 }))
             }
             None => Ok(Response::new(SsoConfigResponse {
@@ -101,6 +102,7 @@ impl SsoSettingsService for SsoSettingsServiceImpl {
                 enabled: false,
                 created_at: String::new(),
                 updated_at: String::new(),
+                woff_id: String::new(),
             })),
         }
     }
@@ -140,18 +142,21 @@ impl SsoSettingsService for SsoSettingsServiceImpl {
         .await
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
 
+        let woff_id_val = if req.woff_id.is_empty() { None } else { Some(&req.woff_id) };
+
         if let Some(_) = existing {
             // Update existing config
             if req.client_secret.is_empty() {
                 // Update without changing secret
                 sqlx::query(
                     "UPDATE sso_provider_configs
-                     SET client_id = $1, external_org_id = $2, enabled = $3, updated_at = NOW()
-                     WHERE organization_id = $4::uuid AND provider = $5",
+                     SET client_id = $1, external_org_id = $2, enabled = $3, woff_id = $4, updated_at = NOW()
+                     WHERE organization_id = $5::uuid AND provider = $6",
                 )
                 .bind(&req.client_id)
                 .bind(&req.external_org_id)
                 .bind(req.enabled)
+                .bind(woff_id_val)
                 .bind(&auth_user.org_id)
                 .bind(&req.provider)
                 .execute(&mut *conn)
@@ -167,13 +172,14 @@ impl SsoSettingsService for SsoSettingsServiceImpl {
                 sqlx::query(
                     "UPDATE sso_provider_configs
                      SET client_id = $1, client_secret_encrypted = $2, external_org_id = $3,
-                         enabled = $4, updated_at = NOW()
-                     WHERE organization_id = $5::uuid AND provider = $6",
+                         enabled = $4, woff_id = $5, updated_at = NOW()
+                     WHERE organization_id = $6::uuid AND provider = $7",
                 )
                 .bind(&req.client_id)
                 .bind(&encrypted)
                 .bind(&req.external_org_id)
                 .bind(req.enabled)
+                .bind(woff_id_val)
                 .bind(&auth_user.org_id)
                 .bind(&req.provider)
                 .execute(&mut *conn)
@@ -195,8 +201,8 @@ impl SsoSettingsService for SsoSettingsServiceImpl {
 
             sqlx::query(
                 "INSERT INTO sso_provider_configs
-                 (organization_id, provider, client_id, client_secret_encrypted, external_org_id, enabled)
-                 VALUES ($1::uuid, $2, $3, $4, $5, $6)",
+                 (organization_id, provider, client_id, client_secret_encrypted, external_org_id, enabled, woff_id)
+                 VALUES ($1::uuid, $2, $3, $4, $5, $6, $7)",
             )
             .bind(&auth_user.org_id)
             .bind(&req.provider)
@@ -204,6 +210,7 @@ impl SsoSettingsService for SsoSettingsServiceImpl {
             .bind(&encrypted)
             .bind(&req.external_org_id)
             .bind(req.enabled)
+            .bind(woff_id_val)
             .execute(&mut *conn)
             .await
             .map_err(|e| {
@@ -218,16 +225,17 @@ impl SsoSettingsService for SsoSettingsServiceImpl {
         }
 
         // Return updated config
-        let (provider, client_id, external_org_id, enabled, created_at, updated_at): (
+        let (provider, client_id, external_org_id, enabled, created_at, updated_at, woff_id): (
             String,
             String,
             String,
             bool,
             String,
             String,
+            Option<String>,
         ) = sqlx::query_as(
             "SELECT provider, client_id, external_org_id, enabled,
-                    created_at::text, updated_at::text
+                    created_at::text, updated_at::text, woff_id
              FROM sso_provider_configs
              WHERE organization_id = $1::uuid AND provider = $2",
         )
@@ -245,6 +253,7 @@ impl SsoSettingsService for SsoSettingsServiceImpl {
             enabled,
             created_at,
             updated_at,
+            woff_id: woff_id.unwrap_or_default(),
         }))
     }
 
@@ -296,9 +305,9 @@ impl SsoSettingsService for SsoSettingsServiceImpl {
             .await
             .map_err(|e| Status::internal(format!("RLS error: {}", e)))?;
 
-        let rows: Vec<(String, String, String, bool, String, String)> = sqlx::query_as(
+        let rows: Vec<(String, String, String, bool, String, String, Option<String>)> = sqlx::query_as(
             "SELECT provider, client_id, external_org_id, enabled,
-                    created_at::text, updated_at::text
+                    created_at::text, updated_at::text, woff_id
              FROM sso_provider_configs
              WHERE organization_id = $1::uuid
              ORDER BY provider",
@@ -311,7 +320,7 @@ impl SsoSettingsService for SsoSettingsServiceImpl {
         let configs = rows
             .into_iter()
             .map(
-                |(provider, client_id, external_org_id, enabled, created_at, updated_at)| {
+                |(provider, client_id, external_org_id, enabled, created_at, updated_at, woff_id)| {
                     SsoConfigResponse {
                         provider,
                         client_id,
@@ -320,6 +329,7 @@ impl SsoSettingsService for SsoSettingsServiceImpl {
                         enabled,
                         created_at,
                         updated_at,
+                        woff_id: woff_id.unwrap_or_default(),
                     }
                 },
             )

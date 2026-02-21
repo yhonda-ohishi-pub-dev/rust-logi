@@ -371,8 +371,8 @@ impl AuthService for AuthServiceImpl {
         })?;
 
         // Try exact provider + external_org_id match
-        let row: Option<(String, String)> = sqlx::query_as(
-            "SELECT c.client_id, o.name
+        let row: Option<(String, String, Option<String>)> = sqlx::query_as(
+            "SELECT c.client_id, o.name, c.woff_id
              FROM sso_provider_configs c
              JOIN organizations o ON o.id = c.organization_id
              WHERE c.provider = $1 AND c.external_org_id = $2 AND c.enabled = TRUE
@@ -387,7 +387,7 @@ impl AuthService for AuthServiceImpl {
         // Fallback: try org slug match
         let row = if row.is_none() {
             sqlx::query_as(
-                "SELECT c.client_id, o.name
+                "SELECT c.client_id, o.name, c.woff_id
                  FROM organizations o
                  JOIN sso_provider_configs c ON c.organization_id = o.id
                  WHERE o.slug = $1 AND c.provider = $2 AND c.enabled = TRUE
@@ -403,7 +403,7 @@ impl AuthService for AuthServiceImpl {
         };
 
         match row {
-            Some((client_id, org_name)) => {
+            Some((client_id, org_name, woff_id)) => {
                 Ok(Response::new(ResolveSsoProviderResponse {
                     available: true,
                     client_id,
@@ -411,6 +411,7 @@ impl AuthService for AuthServiceImpl {
                     provider: req.provider,
                     external_org_id: req.external_org_id,
                     authorize_url: provider.authorize_url().to_string(),
+                    woff_id: woff_id.unwrap_or_default(),
                 }))
             }
             None => Ok(Response::new(ResolveSsoProviderResponse {
@@ -420,6 +421,7 @@ impl AuthService for AuthServiceImpl {
                 provider: String::new(),
                 external_org_id: String::new(),
                 authorize_url: String::new(),
+                woff_id: String::new(),
             })),
         }
     }
@@ -430,13 +432,16 @@ impl AuthService for AuthServiceImpl {
     ) -> Result<Response<AuthResponse>, Status> {
         let req = request.into_inner();
 
-        if req.code.is_empty()
-            || req.provider.is_empty()
-            || req.external_org_id.is_empty()
-            || req.redirect_uri.is_empty()
-        {
+        let use_access_token = !req.access_token.is_empty();
+
+        if req.provider.is_empty() || req.external_org_id.is_empty() {
             return Err(Status::invalid_argument(
-                "code, provider, external_org_id, and redirect_uri are required",
+                "provider and external_org_id are required",
+            ));
+        }
+        if !use_access_token && (req.code.is_empty() || req.redirect_uri.is_empty()) {
+            return Err(Status::invalid_argument(
+                "code and redirect_uri are required (or provide access_token)",
             ));
         }
 
@@ -464,22 +469,27 @@ impl AuthService for AuthServiceImpl {
             ))
         })?;
 
-        // 2. Decrypt client_secret
-        let client_secret =
-            lineworks_auth::decrypt_secret(&client_secret_encrypted, &self.jwt_secret)
-                .map_err(|e| Status::internal(format!("Failed to decrypt client secret: {}", e)))?;
-
-        // 3. Exchange code for access_token (generic)
-        let access_token = sso_providers::exchange_code(
-            &self.http_client,
-            &provider,
-            &client_id,
-            &client_secret,
-            &req.code,
-            &req.redirect_uri,
-        )
-        .await
-        .map_err(|e| Status::unauthenticated(format!("SSO auth failed: {}", e)))?;
+        // 2. Get access_token: either from WOFF directly or via code exchange
+        let access_token = if use_access_token {
+            // WOFF flow: access_token provided directly (skip code exchange)
+            tracing::info!("SSO login via WOFF access_token for provider={}, external_org_id={}", req.provider, req.external_org_id);
+            req.access_token.clone()
+        } else {
+            // Standard OAuth flow: exchange code for access_token
+            let client_secret =
+                lineworks_auth::decrypt_secret(&client_secret_encrypted, &self.jwt_secret)
+                    .map_err(|e| Status::internal(format!("Failed to decrypt client secret: {}", e)))?;
+            sso_providers::exchange_code(
+                &self.http_client,
+                &provider,
+                &client_id,
+                &client_secret,
+                &req.code,
+                &req.redirect_uri,
+            )
+            .await
+            .map_err(|e| Status::unauthenticated(format!("SSO auth failed: {}", e)))?
+        };
 
         // 4. Fetch user profile (generic)
         let profile =
