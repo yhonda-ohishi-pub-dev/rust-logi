@@ -7,8 +7,9 @@ hono-logiのRust実装（gRPC-Web対応）
 新しいセッション開始時は必ずここに記載されたファイルを読んで前回の状況を把握すること。
 handoverの全タスクが完了したら `handover/completed/` に移動し、ここのパスを削除すること。
 
-- `handover/2026-02-21_03-31.md` — LINE WORKS SSO OAuth 実装（Phase 1-5 完了・全デプロイ済み / Phase 6 未着手）
-- `handover/2026-02-21_14-59.md` — WOFF SDK Integration（Phase 1-3 実装済み / WOFF IDマルチテナント問題で設計再検討必要）
+- `handover/2026-02-21_18-34.md` — LINE WORKS Bot リッチメニュー管理画面（DB/Proto/Rust完了・auth-worker API ハンドラ実装途中）
+- `handover/2026-02-21_17-23.md` — logout 後 WOFF login できない問題（cookie Domain 修正デプロイ済み / DB ドメイン不一致 + stale cookie が残る問題が未解決）
+- `handover/2026-02-21_16-52.md` — WOFF トップページ + cross-subdomain cookie 共有（全デプロイ済み / Developer Console 手動設定のみ残り）
 
 ## データベース
 
@@ -294,6 +295,29 @@ set_current_organization(&mut conn, &organization_id).await...;
 ### デプロイ
 - Cloud Run revision: `rust-logi-00054-rsd`
 - Health check: SERVING
+
+---
+
+## 完了: Rich Menu 画像アップロード 401 エラー修正
+
+### 原因
+`uploadImage()` Step 2 の実装が LINE WORKS API 仕様と3点で異なっていた:
+- HTTP メソッド: `PUT` → 正しくは **`POST`**
+- Content-Type: `image/png` (raw binary) → 正しくは **`multipart/form-data`**
+- Body: raw ArrayBuffer → 正しくは **FormData** (`resourceName` + `Filedata` フィールド)
+
+### 修正ファイル
+- `auth-worker/src/lib/lineworks-bot-api.ts:242-257` — `uploadImage()` Step 2 を `FormData` + `POST` に変更
+
+### LINE WORKS ファイルアップロード仕様（重要）
+uploadUrl へのアップロードは以下の形式:
+```
+POST {uploadUrl}
+Authorization: Bearer {token}
+Content-Type: multipart/form-data
+FormData: resourceName={fileName}, Filedata={binaryFile}
+```
+公式ドキュメント: https://developers.worksmobile.com/jp/reference/file-upload?lang=ja
 
 ---
 

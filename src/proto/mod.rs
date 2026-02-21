@@ -48,3 +48,7 @@ pub mod member {
 pub mod sso_settings {
     include!("logi.sso_settings.rs");
 }
+
+pub mod bot_config {
+    include!("logi.bot_config.rs");
+}
