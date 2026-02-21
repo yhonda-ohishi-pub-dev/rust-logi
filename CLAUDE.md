@@ -63,6 +63,7 @@ source .env && sqlx migrate run
   - `cf-grpc-proxy/` → /home/yhonda/js/nuxt_dtako_logs/cf-grpc-proxy（gRPCプロキシ）
   - `smb-upload-worker/` → /home/yhonda/js/smb-upload-worker（SMBアップロード）
   - `auth-worker/` → /home/yhonda/js/auth-worker（JWT認証）
+    - `packages/auth-client/` — 共通 Nuxt composable（`@yhonda-ohishi-pub-dev/auth-client`、GitHub Packages で公開）
 - `services/` - バックエンドサービス参照（symlink）
   - `browser-render-rust/` → /home/yhonda/rust/browser-render_rust（DVRレンダリング）
     - `rust-scraper/` - git submodule（車両データスクレイピング）
@@ -119,6 +120,26 @@ const client = createClient(FilesService, transport);
 ### pre-pushフック
 
 `git push`時に自動でTypeScript生成とGitHub Packagesへの公開が実行される。
+
+## npmパッケージ (@yhonda-ohishi-pub-dev/auth-client)
+
+フロントエンド共通の認証 composable（LINE WORKS 自動ログイン対応）。GitHub Packages で公開。
+
+### ソース
+
+`workers/auth-worker/packages/auth-client/` → `auth-worker` リポジトリ内
+
+### GitHub Actions 自動公開
+
+`auth-worker` リポジトリの `.github/workflows/publish-auth-client.yml` で `main` push 時に自動 publish。
+バージョン: `0.1.{COMMIT_COUNT}`（コミット数ベース）
+
+### 使用先
+
+- `front/nuxt-pwa-carins/` — `composables/useAuth.ts` で re-export
+- `front/nuxt-dtako-logs/` — `composables/useAuth.ts` で re-export
+
+両プロジェクトで `nuxt.config.ts` の `build.transpile` に追加が必要（TypeScript ソース直接配布のため）。
 
 ## ファイルストレージ
 
@@ -272,6 +293,55 @@ set_current_organization(&mut conn, &organization_id).await...;
 ### デプロイ
 - Cloud Run revision: `rust-logi-00054-rsd`
 - Health check: SERVING
+
+---
+
+## 完了: LINE WORKS 自動ログイン + useAuth 共通化
+
+### 背景
+LINE WORKS アプリ内からフロントエンドを開いた際、ログインページで手動で LINE WORKS アドレスを入力する必要があった。Bot リンクに `?lw=<domain>` パラメータを付与することでログインページをスキップし、LINE WORKS OAuth を自動開始する機能を追加。
+
+### 共通パッケージ: `@yhonda-ohishi-pub-dev/auth-client`
+- **リポジトリ**: `auth-worker/packages/auth-client/`
+- **公開先**: GitHub Packages（GitHub Actions で自動 publish）
+- **内容**: `useAuth` composable（JWT 管理 + LINE WORKS 自動ログイン）
+- 両フロントエンドの `composables/useAuth.ts` を共通化
+
+### フロー
+```
+Bot リンク: https://carins.mtamaramu.com/?lw=ohishi
+  → サーバーミドルウェア or クライアントプラグインが ?lw=ohishi を検出
+  → lw_domain を localStorage/cookie に保存
+  → auth-worker /oauth/lineworks/redirect に直接リダイレクト（ログインページスキップ）
+  → LINE WORKS OAuth（アプリ内なので自動承認）
+  → JWT 取得 → アプリ表示
+次回以降: 保存済み lw_domain で自動ログイン（?lw パラメータ不要）
+```
+
+### 変更ファイル
+
+**auth-worker** (commit: `176d713`):
+- `packages/auth-client/package.json` — 新規パッケージ定義
+- `packages/auth-client/src/useAuth.ts` — 共通 composable（LW 自動ログイン付き）
+- `packages/auth-client/src/index.ts` — re-export
+- `.github/workflows/publish-auth-client.yml` — GitHub Packages publish
+
+**nuxt-pwa-carins**:
+- `composables/useAuth.ts` → `@yhonda-ohishi-pub-dev/auth-client` の re-export に置換
+- `plugins/auth.client.ts` — `?lw=<domain>` 処理 + cookie 同期追加
+- `server/middleware/auth.ts` — `?lw` / `lw_domain` cookie / `?lw_callback` 対応
+- `nuxt.config.ts` — `transpile` に auth-client 追加
+
+**nuxt-dtako-logs**:
+- `composables/useAuth.ts` → `@yhonda-ohishi-pub-dev/auth-client` の re-export に置換
+- `plugins/auth.client.ts` — `?lw=<domain>` 処理 + cookie 同期追加
+- `nuxt.config.ts` — `transpile` に auth-client 追加
+
+### 注意事項
+- `?lw=<domain>` は初回のみ必要（Bot がドメイン付き URL を送信）、以降は localStorage/cookie で記憶
+- 明示的ログアウト時は `clearLwDomain()` でドメイン記憶を解除
+- auth-worker の既存エンドポイントに変更なし（`/oauth/lineworks/redirect?address=<domain>` がそのまま動作）
+- SSR ミドルウェアのリダイレクトループ防止に `?lw_callback=1` マーカーを使用
 
 ---
 
