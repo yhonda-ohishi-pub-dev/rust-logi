@@ -1,0 +1,26 @@
+{
+  "language": "japanese",
+  "permissions": {
+    "allow": [
+      "Read(//home/yhonda/js/nuxt_dtako_logs/**)",
+      "Read(//home/yhonda/rust/**)",
+      "Read(//home/yhonda/js/hono-logi/**)",
+      "Bash(# Check hono-api-test clone vs any external copy cd /home/yhonda/rust/rust-logi/hono-api-test_ref && git log --oneline -1 echo \"\"===\"\" # Check browser_render_go -- does a copy exist in /home/yhonda/go/ ? ls /home/yhonda/go/ echo \"\"===\"\" # Does browser-render_rust have browser_render_go_ref inside it? ls /home/yhonda/rust/browser-render_rust/browser_render_go_ref/)",
+      "Read(//home/yhonda/**)",
+      "Read(//dev/**)",
+      "Read(//home/yhonda/rust/rust-logi/**)",
+      "mcp__cloudflare-docs__search_cloudflare_documentation",
+      "Bash(cargo test:*)"
+    ],
+    "additionalDirectories": [
+      "/home/yhonda/js/nuxt-pwa-carins",
+      "/home/yhonda/js/nuxt_dtako_logs/plugins",
+      "/home/yhonda/js/smb-upload-worker",
+      "/home/yhonda/js/nuxt_dtako_logs/cf-grpc-proxy/src",
+      "/home/yhonda/rust/smb-watch/src",
+      "/home/yhonda/js/auth-worker/src/lib",
+      "/home/yhonda/js/auth-worker/src/handlers",
+      "/home/yhonda/js/auth-worker/src"
+    ]
+  }
+}

@@ -7,7 +7,7 @@ hono-logiのRust実装（gRPC-Web対応）
 新しいセッション開始時は必ずここに記載されたファイルを読んで前回の状況を把握すること。
 handoverの全タスクが完了したら `handover/completed/` に移動し、ここのパスを削除すること。
 
-- `handover/2026-02-21_03-10.md` — LINE WORKS SSO OAuth 実装（Phase 3 完了・コンパイル成功 / Phase 4-6 未着手）
+- `handover/2026-02-21_03-31.md` — LINE WORKS SSO OAuth 実装（Phase 1-5 完了・全デプロイ済み / Phase 6 未着手）
 
 ## データベース
 
