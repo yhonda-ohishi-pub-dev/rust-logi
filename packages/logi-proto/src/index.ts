@@ -8,3 +8,4 @@ export * from "./gen/dtakologs_pb";
 export * from "./gen/dvr_notifications_pb";
 export * from "./gen/auth_pb";
 export * from "./gen/organization_pb";
+export * from "./gen/sso_settings_pb";
