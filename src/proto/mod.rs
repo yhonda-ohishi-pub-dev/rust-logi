@@ -44,3 +44,7 @@ pub mod organization {
 pub mod member {
     include!("logi.member.rs");
 }
+
+pub mod sso_settings {
+    include!("logi.sso_settings.rs");
+}

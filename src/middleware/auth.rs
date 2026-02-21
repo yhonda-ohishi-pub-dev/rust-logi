@@ -32,6 +32,8 @@ const PUBLIC_PATHS: &[&str] = &[
     "/grpc.health.v1.Health/Watch",
     "/grpc.reflection.v1.ServerReflection/ServerReflectionInfo",
     "/grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo",
+    "/logi.auth.AuthService/ResolveSsoProvider",
+    "/logi.auth.AuthService/LoginWithSsoProvider",
 ];
 
 /// x-organization-id metadata key

@@ -17,7 +17,7 @@ src/proto/*.rs
 # Reference repositories (symlinks + legacy dirs)
 front/
 workers/
-services/
+/services/
 legacy/
 
 # Cloud SQL Proxy binary

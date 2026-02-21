@@ -1,0 +1,47 @@
+syntax = "proto3";
+package logi.sso_settings;
+
+service SsoSettingsService {
+  // Get SSO provider config for current organization (admin only)
+  rpc GetConfig(GetSsoConfigRequest) returns (SsoConfigResponse);
+  // Create or update SSO provider config (admin only)
+  rpc UpsertConfig(UpsertSsoConfigRequest) returns (SsoConfigResponse);
+  // Delete SSO provider config (admin only)
+  rpc DeleteConfig(DeleteSsoConfigRequest) returns (DeleteSsoConfigResponse);
+  // List all SSO configs for current organization (admin only)
+  rpc ListConfigs(ListSsoConfigsRequest) returns (ListSsoConfigsResponse);
+}
+
+message GetSsoConfigRequest {
+  string provider = 1;
+}
+
+message DeleteSsoConfigRequest {
+  string provider = 1;
+}
+
+message DeleteSsoConfigResponse {}
+
+message ListSsoConfigsRequest {}
+
+message ListSsoConfigsResponse {
+  repeated SsoConfigResponse configs = 1;
+}
+
+message SsoConfigResponse {
+  string provider = 1;
+  string client_id = 2;
+  bool has_client_secret = 3;
+  string external_org_id = 4;
+  bool enabled = 5;
+  string created_at = 6;
+  string updated_at = 7;
+}
+
+message UpsertSsoConfigRequest {
+  string provider = 1;
+  string client_id = 2;
+  string client_secret = 3;
+  string external_org_id = 4;
+  bool enabled = 5;
+}

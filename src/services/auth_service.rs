@@ -8,9 +8,12 @@ use tonic::{Request, Response, Status};
 use crate::google_auth::GoogleTokenVerifier;
 use crate::proto::auth::auth_service_server::AuthService;
 use crate::proto::auth::{
-    AuthResponse, LoginRequest, LoginWithGoogleRequest, SignUpWithGoogleRequest,
+    AuthResponse, LoginRequest, LoginWithGoogleRequest, LoginWithSsoProviderRequest,
+    ResolveSsoProviderRequest, ResolveSsoProviderResponse, SignUpWithGoogleRequest,
     ValidateTokenRequest, ValidateTokenResponse,
 };
+use crate::services::lineworks_auth;
+use crate::services::sso_providers;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
@@ -25,6 +28,7 @@ pub struct AuthServiceImpl {
     pool: PgPool,
     jwt_secret: String,
     google_verifier: Option<GoogleTokenVerifier>,
+    http_client: reqwest::Client,
 }
 
 impl AuthServiceImpl {
@@ -34,6 +38,7 @@ impl AuthServiceImpl {
             pool,
             jwt_secret,
             google_verifier,
+            http_client: reqwest::Client::new(),
         }
     }
 
@@ -346,5 +351,262 @@ impl AuthService for AuthServiceImpl {
                 username: String::new(),
             })),
         }
+    }
+
+    async fn resolve_sso_provider(
+        &self,
+        request: Request<ResolveSsoProviderRequest>,
+    ) -> Result<Response<ResolveSsoProviderResponse>, Status> {
+        let req = request.into_inner();
+
+        if req.provider.is_empty() || req.external_org_id.is_empty() {
+            return Err(Status::invalid_argument(
+                "provider and external_org_id are required",
+            ));
+        }
+
+        // Validate provider
+        let provider = sso_providers::Provider::from_str(&req.provider).ok_or_else(|| {
+            Status::invalid_argument(format!("Unknown provider: {}", req.provider))
+        })?;
+
+        // Try exact provider + external_org_id match
+        let row: Option<(String, String)> = sqlx::query_as(
+            "SELECT c.client_id, o.name
+             FROM sso_provider_configs c
+             JOIN organizations o ON o.id = c.organization_id
+             WHERE c.provider = $1 AND c.external_org_id = $2 AND c.enabled = TRUE
+               AND o.deleted_at IS NULL",
+        )
+        .bind(&req.provider)
+        .bind(&req.external_org_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
+
+        // Fallback: try org slug match
+        let row = if row.is_none() {
+            sqlx::query_as(
+                "SELECT c.client_id, o.name
+                 FROM organizations o
+                 JOIN sso_provider_configs c ON c.organization_id = o.id
+                 WHERE o.slug = $1 AND c.provider = $2 AND c.enabled = TRUE
+                   AND o.deleted_at IS NULL",
+            )
+            .bind(&req.external_org_id)
+            .bind(&req.provider)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| Status::internal(format!("Database error: {}", e)))?
+        } else {
+            row
+        };
+
+        match row {
+            Some((client_id, org_name)) => {
+                Ok(Response::new(ResolveSsoProviderResponse {
+                    available: true,
+                    client_id,
+                    organization_name: org_name,
+                    provider: req.provider,
+                    external_org_id: req.external_org_id,
+                    authorize_url: provider.authorize_url().to_string(),
+                }))
+            }
+            None => Ok(Response::new(ResolveSsoProviderResponse {
+                available: false,
+                client_id: String::new(),
+                organization_name: String::new(),
+                provider: String::new(),
+                external_org_id: String::new(),
+                authorize_url: String::new(),
+            })),
+        }
+    }
+
+    async fn login_with_sso_provider(
+        &self,
+        request: Request<LoginWithSsoProviderRequest>,
+    ) -> Result<Response<AuthResponse>, Status> {
+        let req = request.into_inner();
+
+        if req.code.is_empty()
+            || req.provider.is_empty()
+            || req.external_org_id.is_empty()
+            || req.redirect_uri.is_empty()
+        {
+            return Err(Status::invalid_argument(
+                "code, provider, external_org_id, and redirect_uri are required",
+            ));
+        }
+
+        // Validate provider
+        let provider = sso_providers::Provider::from_str(&req.provider).ok_or_else(|| {
+            Status::invalid_argument(format!("Unknown provider: {}", req.provider))
+        })?;
+
+        // 1. Look up SSO config by provider + external_org_id
+        let config_row: Option<(String, String, String)> = sqlx::query_as(
+            "SELECT c.client_id, c.client_secret_encrypted, c.organization_id::text
+             FROM sso_provider_configs c
+             WHERE c.provider = $1 AND c.external_org_id = $2 AND c.enabled = TRUE",
+        )
+        .bind(&req.provider)
+        .bind(&req.external_org_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
+
+        let (client_id, client_secret_encrypted, org_id) = config_row.ok_or_else(|| {
+            Status::not_found(format!(
+                "SSO config not found for provider={}, external_org_id={}",
+                req.provider, req.external_org_id
+            ))
+        })?;
+
+        // 2. Decrypt client_secret
+        let client_secret =
+            lineworks_auth::decrypt_secret(&client_secret_encrypted, &self.jwt_secret)
+                .map_err(|e| Status::internal(format!("Failed to decrypt client secret: {}", e)))?;
+
+        // 3. Exchange code for access_token (generic)
+        let access_token = sso_providers::exchange_code(
+            &self.http_client,
+            &provider,
+            &client_id,
+            &client_secret,
+            &req.code,
+            &req.redirect_uri,
+        )
+        .await
+        .map_err(|e| Status::unauthenticated(format!("SSO auth failed: {}", e)))?;
+
+        // 4. Fetch user profile (generic)
+        let profile =
+            sso_providers::fetch_user_profile(&self.http_client, &provider, &access_token)
+                .await
+                .map_err(|e| Status::internal(format!("Failed to fetch SSO profile: {}", e)))?;
+
+        tracing::info!(
+            "SSO login: provider={}, user_id={}, email={:?}, external_org_id={}",
+            req.provider,
+            profile.provider_user_id,
+            profile.email,
+            req.external_org_id
+        );
+
+        // 5. Look up existing oauth_account
+        let existing: Option<(String, Option<String>)> = sqlx::query_as(
+            "SELECT u.id::text, u.email
+             FROM oauth_accounts oa
+             JOIN app_users u ON u.id = oa.app_user_id
+             WHERE oa.provider = $1 AND oa.provider_account_id = $2
+               AND u.deleted_at IS NULL",
+        )
+        .bind(&req.provider)
+        .bind(&profile.provider_user_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
+
+        let (user_id, email) = if let Some((uid, email)) = existing {
+            // Existing user — ensure they're still a member of this org
+            let is_member: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM user_organizations WHERE user_id = $1::uuid AND organization_id = $2::uuid)",
+            )
+            .bind(&uid)
+            .bind(&org_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
+
+            if !is_member {
+                // Re-add to org (may have been removed and re-logging in)
+                sqlx::query(
+                    "INSERT INTO user_organizations (user_id, organization_id, role, is_default)
+                     VALUES ($1::uuid, $2::uuid, 'member', false)
+                     ON CONFLICT (user_id, organization_id) DO NOTHING",
+                )
+                .bind(&uid)
+                .bind(&org_id)
+                .execute(&self.pool)
+                .await
+                .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
+            }
+
+            let username = email
+                .clone()
+                .unwrap_or_else(|| profile.display_name.clone());
+            (uid, username)
+        } else {
+            // 6. Auto-register new user
+            let user_email = profile.email.as_deref();
+
+            let mut tx = self
+                .pool
+                .begin()
+                .await
+                .map_err(|e| Status::internal(format!("Transaction error: {}", e)))?;
+
+            // Create app_user
+            let (new_user_id,): (String,) = sqlx::query_as(
+                "INSERT INTO app_users (email, display_name) VALUES ($1, $2) RETURNING id::text",
+            )
+            .bind(user_email)
+            .bind(&profile.display_name)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to create user: {}", e)))?;
+
+            // Create oauth_account
+            sqlx::query(
+                "INSERT INTO oauth_accounts (app_user_id, provider, provider_account_id, access_token)
+                 VALUES ($1::uuid, $2, $3, $4)",
+            )
+            .bind(&new_user_id)
+            .bind(&req.provider)
+            .bind(&profile.provider_user_id)
+            .bind(&access_token)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to create oauth account: {}", e)))?;
+
+            // Create user_organizations (member role, set as default)
+            sqlx::query(
+                "INSERT INTO user_organizations (user_id, organization_id, role, is_default)
+                 VALUES ($1::uuid, $2::uuid, 'member', true)",
+            )
+            .bind(&new_user_id)
+            .bind(&org_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to create user-org link: {}", e)))?;
+
+            tx.commit()
+                .await
+                .map_err(|e| Status::internal(format!("Transaction commit error: {}", e)))?;
+
+            tracing::info!(
+                "Auto-registered SSO user {} ({}) via provider={} in org {}",
+                &profile.provider_user_id,
+                &profile.display_name,
+                &req.provider,
+                &org_id
+            );
+
+            let username = user_email
+                .map(|e| e.to_string())
+                .unwrap_or_else(|| profile.display_name.clone());
+            (new_user_id, username)
+        };
+
+        let (token, exp) = self.issue_jwt(&user_id, &org_id, &email)?;
+
+        Ok(Response::new(AuthResponse {
+            token,
+            expires_at: exp.to_rfc3339(),
+            user_id,
+            organization_id: org_id,
+        }))
     }
 }

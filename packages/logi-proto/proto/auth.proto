@@ -10,6 +10,10 @@ service AuthService {
   rpc Login(LoginRequest) returns (AuthResponse);
   // Validate JWT token
   rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse);
+  // Resolve SSO provider config by provider + external org ID (public)
+  rpc ResolveSsoProvider(ResolveSsoProviderRequest) returns (ResolveSsoProviderResponse);
+  // Login with SSO provider authorization code (public)
+  rpc LoginWithSsoProvider(LoginWithSsoProviderRequest) returns (AuthResponse);
 }
 
 message SignUpWithGoogleRequest {
@@ -44,4 +48,25 @@ message ValidateTokenResponse {
   string organization_id = 2;
   string user_id = 3;
   string username = 4;
+}
+
+message ResolveSsoProviderRequest {
+  string provider = 1;          // 'lineworks', 'discord', 'slack'
+  string external_org_id = 2;   // domain for LW, guild_id for Discord, etc.
+}
+
+message ResolveSsoProviderResponse {
+  bool available = 1;
+  string client_id = 2;
+  string organization_name = 3;
+  string provider = 4;
+  string external_org_id = 5;
+  string authorize_url = 6;     // pre-built authorize URL for convenience
+}
+
+message LoginWithSsoProviderRequest {
+  string provider = 1;
+  string external_org_id = 2;
+  string code = 3;
+  string redirect_uri = 4;
 }

@@ -9,6 +9,9 @@ pub mod dvr_notifications_service;
 pub mod auth_service;
 pub mod organization_service;
 pub mod member_service;
+pub mod lineworks_auth;
+pub mod sso_providers;
+pub mod sso_settings_service;
 
 pub use file_auto_parser::FileAutoParser;
 pub use files_service::FilesServiceImpl;
@@ -22,3 +25,4 @@ pub use dvr_notifications_service::DvrNotificationsServiceImpl;
 pub use auth_service::AuthServiceImpl;
 pub use organization_service::OrganizationServiceImpl;
 pub use member_service::MemberServiceImpl;
+pub use sso_settings_service::SsoSettingsServiceImpl;
