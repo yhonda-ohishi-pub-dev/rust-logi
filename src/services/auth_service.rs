@@ -22,6 +22,8 @@ pub struct Claims {
     pub username: String,
     pub exp: i64,
     pub iat: i64,
+    #[serde(default)]
+    pub provider: String,
 }
 
 pub struct AuthServiceImpl {
@@ -47,6 +49,7 @@ impl AuthServiceImpl {
         user_id: &str,
         org_id: &str,
         username: &str,
+        provider: &str,
     ) -> Result<(String, chrono::DateTime<Utc>), Status> {
         let now = Utc::now();
         let exp = now + chrono::Duration::hours(24);
@@ -56,6 +59,7 @@ impl AuthServiceImpl {
             username: username.to_string(),
             exp: exp.timestamp(),
             iat: now.timestamp(),
+            provider: provider.to_string(),
         };
         let token = encode(
             &Header::default(),
@@ -111,7 +115,7 @@ impl AuthService for AuthServiceImpl {
             .map_err(|e| Status::internal(format!("Database error: {}", e)))?
             .ok_or_else(|| Status::internal("User has no default organization"))?;
 
-            let (token, exp) = self.issue_jwt(&existing_user_id, &row.0, &row.1)?;
+            let (token, exp) = self.issue_jwt(&existing_user_id, &row.0, &row.1, "google")?;
             return Ok(Response::new(AuthResponse {
                 token,
                 expires_at: exp.to_rfc3339(),
@@ -186,7 +190,7 @@ impl AuthService for AuthServiceImpl {
             .await
             .map_err(|e| Status::internal(format!("Transaction commit error: {}", e)))?;
 
-        let (token, exp) = self.issue_jwt(&user_id, &org_id, &google_claims.email)?;
+        let (token, exp) = self.issue_jwt(&user_id, &org_id, &google_claims.email, "google")?;
 
         Ok(Response::new(AuthResponse {
             token,
@@ -266,7 +270,7 @@ impl AuthService for AuthServiceImpl {
             (new_user_id, default_org_id.to_string(), google_claims.email.clone())
         };
 
-        let (token, exp) = self.issue_jwt(&user_id, &org_id, &email)?;
+        let (token, exp) = self.issue_jwt(&user_id, &org_id, &email, "google")?;
 
         Ok(Response::new(AuthResponse {
             token,
@@ -315,7 +319,7 @@ impl AuthService for AuthServiceImpl {
             .map_err(|_| Status::unauthenticated("Invalid credentials"))?;
 
         let username = email.as_deref().unwrap_or(&req.username);
-        let (token, exp) = self.issue_jwt(&app_user_id, &req.organization_id, username)?;
+        let (token, exp) = self.issue_jwt(&app_user_id, &req.organization_id, username, "password")?;
 
         Ok(Response::new(AuthResponse {
             token,
@@ -610,7 +614,7 @@ impl AuthService for AuthServiceImpl {
             (new_user_id, username)
         };
 
-        let (token, exp) = self.issue_jwt(&user_id, &org_id, &email)?;
+        let (token, exp) = self.issue_jwt(&user_id, &org_id, &email, &req.provider)?;
 
         Ok(Response::new(AuthResponse {
             token,

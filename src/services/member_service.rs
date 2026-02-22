@@ -71,6 +71,7 @@ impl MemberServiceImpl {
         user_id: &str,
         org_id: &str,
         username: &str,
+        provider: &str,
     ) -> Result<(String, chrono::DateTime<Utc>), Status> {
         let now = Utc::now();
         let exp = now + chrono::Duration::hours(24);
@@ -80,6 +81,7 @@ impl MemberServiceImpl {
             username: username.to_string(),
             exp: exp.timestamp(),
             iat: now.timestamp(),
+            provider: provider.to_string(),
         };
         let token = encode(
             &Header::default(),
@@ -285,7 +287,7 @@ impl MemberService for MemberServiceImpl {
             .map_err(|e| Status::internal(format!("Transaction commit error: {}", e)))?;
 
         // Issue JWT (auto-login)
-        let (token, exp) = self.issue_jwt(&user_id, &org_id, &inv_email)?;
+        let (token, exp) = self.issue_jwt(&user_id, &org_id, &inv_email, "password")?;
 
         Ok(Response::new(AuthResponse {
             token,
