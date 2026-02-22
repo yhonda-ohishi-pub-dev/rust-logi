@@ -14,6 +14,8 @@ service AuthService {
   rpc ResolveSsoProvider(ResolveSsoProviderRequest) returns (ResolveSsoProviderResponse);
   // Login with SSO provider authorization code (public)
   rpc LoginWithSsoProvider(LoginWithSsoProviderRequest) returns (AuthResponse);
+  // Switch to a different organization (requires valid JWT)
+  rpc SwitchOrganization(SwitchOrganizationRequest) returns (AuthResponse);
 }
 
 message SignUpWithGoogleRequest {
@@ -71,4 +73,8 @@ message LoginWithSsoProviderRequest {
   string code = 3;
   string redirect_uri = 4;
   string access_token = 5;    // WOFF access token (alternative to code+redirect_uri)
+}
+
+message SwitchOrganizationRequest {
+  string organization_id = 1;
 }

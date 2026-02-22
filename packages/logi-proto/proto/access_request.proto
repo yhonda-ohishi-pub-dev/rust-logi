@@ -1,0 +1,74 @@
+syntax = "proto3";
+package logi.access_request;
+
+import "common.proto";
+
+service AccessRequestService {
+  // Create an access request for the authenticated user to join an organization.
+  // Requires JWT authentication. user_id/email/provider are extracted from JWT.
+  rpc CreateAccessRequest(CreateAccessRequestReq) returns (CreateAccessRequestRes);
+
+  // Get organization info by slug. Public (no auth required).
+  rpc GetOrganizationBySlug(GetOrgBySlugReq) returns (GetOrgBySlugRes);
+
+  // List access requests for the current organization. Admin only.
+  rpc ListAccessRequests(ListAccessRequestsReq) returns (ListAccessRequestsRes);
+
+  // Approve an access request and add user to organization. Admin only.
+  rpc ApproveAccessRequest(ApproveAccessRequestReq) returns (logi.common.Empty);
+
+  // Decline an access request. Admin only.
+  rpc DeclineAccessRequest(DeclineAccessRequestReq) returns (logi.common.Empty);
+}
+
+message CreateAccessRequestReq {
+  string org_slug = 1;
+}
+
+message CreateAccessRequestRes {
+  string id = 1;
+  string status = 2;    // "pending", "already_member", "already_pending"
+  string org_name = 3;
+}
+
+message GetOrgBySlugReq {
+  string slug = 1;
+}
+
+message GetOrgBySlugRes {
+  bool found = 1;
+  string organization_id = 2;
+  string name = 3;
+  string slug = 4;
+}
+
+message ListAccessRequestsReq {
+  string status_filter = 1;  // "pending", "approved", "declined", or "" for all
+}
+
+message ListAccessRequestsRes {
+  repeated AccessRequest requests = 1;
+}
+
+message AccessRequest {
+  string id = 1;
+  string user_id = 2;
+  string email = 3;
+  string display_name = 4;
+  string avatar_url = 5;
+  string provider = 6;
+  string status = 7;
+  string role = 8;
+  string reviewed_by = 9;
+  string reviewed_at = 10;
+  string created_at = 11;
+}
+
+message ApproveAccessRequestReq {
+  string request_id = 1;
+  string role = 2;  // "admin" or "member" (defaults to "member" if empty)
+}
+
+message DeclineAccessRequestReq {
+  string request_id = 1;
+}

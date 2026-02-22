@@ -7,10 +7,11 @@ use tonic::{Request, Response, Status};
 
 use crate::google_auth::GoogleTokenVerifier;
 use crate::proto::auth::auth_service_server::AuthService;
+use crate::middleware::AuthenticatedUser;
 use crate::proto::auth::{
     AuthResponse, LoginRequest, LoginWithGoogleRequest, LoginWithSsoProviderRequest,
     ResolveSsoProviderRequest, ResolveSsoProviderResponse, SignUpWithGoogleRequest,
-    ValidateTokenRequest, ValidateTokenResponse,
+    SwitchOrganizationRequest, ValidateTokenRequest, ValidateTokenResponse,
 };
 use crate::services::lineworks_auth;
 use crate::services::sso_providers;
@@ -24,6 +25,8 @@ pub struct Claims {
     pub iat: i64,
     #[serde(default)]
     pub provider: String,
+    #[serde(default)]
+    pub org_slug: String,
 }
 
 pub struct AuthServiceImpl {
@@ -50,6 +53,7 @@ impl AuthServiceImpl {
         org_id: &str,
         username: &str,
         provider: &str,
+        org_slug: &str,
     ) -> Result<(String, chrono::DateTime<Utc>), Status> {
         let now = Utc::now();
         let exp = now + chrono::Duration::hours(24);
@@ -60,6 +64,7 @@ impl AuthServiceImpl {
             exp: exp.timestamp(),
             iat: now.timestamp(),
             provider: provider.to_string(),
+            org_slug: org_slug.to_string(),
         };
         let token = encode(
             &Header::default(),
@@ -103,10 +108,11 @@ impl AuthService for AuthServiceImpl {
 
         if let Some((existing_user_id,)) = existing {
             // User already exists — treat as login
-            let row: (String, String) = sqlx::query_as(
-                "SELECT uo.organization_id::text, u.email
+            let row: (String, String, String) = sqlx::query_as(
+                "SELECT uo.organization_id::text, u.email, o.slug
                  FROM user_organizations uo
                  JOIN app_users u ON u.id = uo.user_id
+                 JOIN organizations o ON o.id = uo.organization_id
                  WHERE uo.user_id = $1::uuid AND uo.is_default = true",
             )
             .bind(&existing_user_id)
@@ -115,7 +121,7 @@ impl AuthService for AuthServiceImpl {
             .map_err(|e| Status::internal(format!("Database error: {}", e)))?
             .ok_or_else(|| Status::internal("User has no default organization"))?;
 
-            let (token, exp) = self.issue_jwt(&existing_user_id, &row.0, &row.1, "google")?;
+            let (token, exp) = self.issue_jwt(&existing_user_id, &row.0, &row.1, "google", &row.2)?;
             return Ok(Response::new(AuthResponse {
                 token,
                 expires_at: exp.to_rfc3339(),
@@ -190,7 +196,7 @@ impl AuthService for AuthServiceImpl {
             .await
             .map_err(|e| Status::internal(format!("Transaction commit error: {}", e)))?;
 
-        let (token, exp) = self.issue_jwt(&user_id, &org_id, &google_claims.email, "google")?;
+        let (token, exp) = self.issue_jwt(&user_id, &org_id, &google_claims.email, "google", &req.organization_slug)?;
 
         Ok(Response::new(AuthResponse {
             token,
@@ -214,11 +220,12 @@ impl AuthService for AuthServiceImpl {
             .map_err(|e| Status::unauthenticated(format!("Google auth failed: {}", e)))?;
 
         // 2. Look up user via oauth_accounts
-        let row: Option<(String, String, String)> = sqlx::query_as(
-            "SELECT u.id::text, uo.organization_id::text, u.email
+        let row: Option<(String, String, String, String)> = sqlx::query_as(
+            "SELECT u.id::text, uo.organization_id::text, u.email, o.slug
              FROM oauth_accounts oa
              JOIN app_users u ON u.id = oa.app_user_id
              JOIN user_organizations uo ON uo.user_id = u.id AND uo.is_default = true
+             JOIN organizations o ON o.id = uo.organization_id
              WHERE oa.provider = 'google' AND oa.provider_account_id = $1
                AND u.deleted_at IS NULL",
         )
@@ -227,11 +234,18 @@ impl AuthService for AuthServiceImpl {
         .await
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
 
-        let (user_id, org_id, email) = if let Some(row) = row {
+        let (user_id, org_id, email, org_slug) = if let Some(row) = row {
             row
         } else {
             // Auto-register: create user in default organization
             let default_org_id = "00000000-0000-0000-0000-000000000001";
+            let default_org_slug: String = sqlx::query_scalar(
+                "SELECT slug FROM organizations WHERE id = $1::uuid",
+            )
+            .bind(default_org_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
             let mut tx = self.pool.begin().await
                 .map_err(|e| Status::internal(format!("Transaction error: {}", e)))?;
 
@@ -267,10 +281,10 @@ impl AuthService for AuthServiceImpl {
                 .map_err(|e| Status::internal(format!("Transaction commit error: {}", e)))?;
 
             tracing::info!("Auto-registered Google user {} in default org", &google_claims.email);
-            (new_user_id, default_org_id.to_string(), google_claims.email.clone())
+            (new_user_id, default_org_id.to_string(), google_claims.email.clone(), default_org_slug)
         };
 
-        let (token, exp) = self.issue_jwt(&user_id, &org_id, &email, "google")?;
+        let (token, exp) = self.issue_jwt(&user_id, &org_id, &email, "google", &org_slug)?;
 
         Ok(Response::new(AuthResponse {
             token,
@@ -293,10 +307,11 @@ impl AuthService for AuthServiceImpl {
         }
 
         // Query password_credentials (NO FORCE RLS, so no set_current_organization needed)
-        let row: Option<(String, String, Option<String>)> = sqlx::query_as(
-            "SELECT pc.app_user_id::text, pc.password_hash, u.email
+        let row: Option<(String, String, Option<String>, String)> = sqlx::query_as(
+            "SELECT pc.app_user_id::text, pc.password_hash, u.email, o.slug
              FROM password_credentials pc
              JOIN app_users u ON u.id = pc.app_user_id
+             JOIN organizations o ON o.id = pc.organization_id
              WHERE pc.organization_id = $1::uuid
                AND pc.username = $2
                AND pc.enabled = true
@@ -308,7 +323,7 @@ impl AuthService for AuthServiceImpl {
         .await
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
 
-        let (app_user_id, password_hash, email) =
+        let (app_user_id, password_hash, email, org_slug) =
             row.ok_or_else(|| Status::unauthenticated("Invalid credentials"))?;
 
         // Verify password with argon2
@@ -319,7 +334,7 @@ impl AuthService for AuthServiceImpl {
             .map_err(|_| Status::unauthenticated("Invalid credentials"))?;
 
         let username = email.as_deref().unwrap_or(&req.username);
-        let (token, exp) = self.issue_jwt(&app_user_id, &req.organization_id, username, "password")?;
+        let (token, exp) = self.issue_jwt(&app_user_id, &req.organization_id, username, "password", &org_slug)?;
 
         Ok(Response::new(AuthResponse {
             token,
@@ -455,9 +470,10 @@ impl AuthService for AuthServiceImpl {
         })?;
 
         // 1. Look up SSO config by provider + external_org_id
-        let config_row: Option<(String, String, String)> = sqlx::query_as(
-            "SELECT c.client_id, c.client_secret_encrypted, c.organization_id::text
+        let config_row: Option<(String, String, String, String)> = sqlx::query_as(
+            "SELECT c.client_id, c.client_secret_encrypted, c.organization_id::text, o.slug
              FROM sso_provider_configs c
+             JOIN organizations o ON o.id = c.organization_id
              WHERE c.provider = $1 AND c.external_org_id = $2 AND c.enabled = TRUE",
         )
         .bind(&req.provider)
@@ -466,7 +482,7 @@ impl AuthService for AuthServiceImpl {
         .await
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
 
-        let (client_id, client_secret_encrypted, org_id) = config_row.ok_or_else(|| {
+        let (client_id, client_secret_encrypted, org_id, org_slug) = config_row.ok_or_else(|| {
             Status::not_found(format!(
                 "SSO config not found for provider={}, external_org_id={}",
                 req.provider, req.external_org_id
@@ -614,13 +630,72 @@ impl AuthService for AuthServiceImpl {
             (new_user_id, username)
         };
 
-        let (token, exp) = self.issue_jwt(&user_id, &org_id, &email, &req.provider)?;
+        let (token, exp) = self.issue_jwt(&user_id, &org_id, &email, &req.provider, &org_slug)?;
 
         Ok(Response::new(AuthResponse {
             token,
             expires_at: exp.to_rfc3339(),
             user_id,
             organization_id: org_id,
+        }))
+    }
+
+    async fn switch_organization(
+        &self,
+        request: Request<SwitchOrganizationRequest>,
+    ) -> Result<Response<AuthResponse>, Status> {
+        let auth_user = request
+            .extensions()
+            .get::<AuthenticatedUser>()
+            .cloned()
+            .ok_or_else(|| Status::unauthenticated("Authentication required"))?;
+
+        let req = request.into_inner();
+
+        if req.organization_id.is_empty() {
+            return Err(Status::invalid_argument("organization_id is required"));
+        }
+
+        // Verify membership + get org slug
+        let row: Option<(String, String)> = sqlx::query_as(
+            "SELECT uo.role, o.slug
+             FROM user_organizations uo
+             JOIN organizations o ON o.id = uo.organization_id
+             WHERE uo.user_id = $1::uuid AND uo.organization_id = $2::uuid
+               AND o.deleted_at IS NULL",
+        )
+        .bind(&auth_user.user_id)
+        .bind(&req.organization_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
+
+        let (_role, org_slug) = row.ok_or_else(|| {
+            Status::permission_denied("Not a member of the requested organization")
+        })?;
+
+        // Get username for JWT (AuthenticatedUser doesn't carry username)
+        let username: String = sqlx::query_scalar(
+            "SELECT COALESCE(email, display_name) FROM app_users WHERE id = $1::uuid",
+        )
+        .bind(&auth_user.user_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
+
+        let (token, exp) = self.issue_jwt(
+            &auth_user.user_id,
+            &req.organization_id,
+            &username,
+            &auth_user.provider,
+            &org_slug,
+        )?;
+
+        Ok(Response::new(AuthResponse {
+            token,
+            expires_at: exp.to_rfc3339(),
+            user_id: auth_user.user_id,
+            organization_id: req.organization_id,
         }))
     }
 }

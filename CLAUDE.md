@@ -7,6 +7,10 @@ hono-logiのRust実装（gRPC-Web対応）
 新しいセッション開始時は必ずここに記載されたファイルを読んで前回の状況を把握すること。
 handoverの全タスクが完了したら `handover/completed/` に移動し、ここのパスを削除すること。
 
+- `handover/2026-02-22_17-08.md` — 組織slug表示完了 + 複数組織対応（次回タスク）
+- `handover/2026-02-22_10-30.md` — nuxt-items UI調整完了（全完了）
+- `handover/2026-02-22_07-05.md` — Items 機能（DB・バックエンド完了・フロントエンドデプロイ済み）
+- `handover/2026-02-22_06-19.md` — JWT org_slug 追加（Phase 1 完了・デプロイ済み・手動検証待ち）
 - `handover/2026-02-21_18-34.md` — LINE WORKS Bot リッチメニュー管理画面（DB/Proto/Rust完了・auth-worker API ハンドラ実装途中）
 - `handover/2026-02-21_17-23.md` — logout 後 WOFF login できない問題（cookie Domain 修正デプロイ済み / DB ドメイン不一致 + stale cookie が残る問題が未解決）
 - `handover/2026-02-21_16-52.md` — WOFF トップページ + cross-subdomain cookie 共有（全デプロイ済み / Developer Console 手動設定のみ残り）

@@ -19,6 +19,8 @@ pub struct AuthenticatedUser {
     pub user_id: String,
     pub org_id: String,
     pub role: String,
+    pub provider: String,
+    pub org_slug: String,
 }
 
 /// Public paths that do not require JWT authentication
@@ -34,6 +36,7 @@ const PUBLIC_PATHS: &[&str] = &[
     "/grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo",
     "/logi.auth.AuthService/ResolveSsoProvider",
     "/logi.auth.AuthService/LoginWithSsoProvider",
+    "/logi.access_request.AccessRequestService/GetOrganizationBySlug",
 ];
 
 /// x-organization-id metadata key
@@ -185,6 +188,8 @@ where
                     user_id: claims.sub,
                     org_id: effective_org_id.clone(),
                     role,
+                    provider: claims.provider.clone(),
+                    org_slug: claims.org_slug.clone(),
                 });
 
                 // Also set x-organization-id header so existing services can read it

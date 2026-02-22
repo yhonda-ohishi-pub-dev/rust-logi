@@ -1,0 +1,90 @@
+syntax = "proto3";
+package logi.items;
+
+import "common.proto";
+
+service ItemsService {
+  rpc CreateItem(CreateItemReq) returns (CreateItemRes);
+  rpc GetItem(GetItemReq) returns (GetItemRes);
+  rpc UpdateItem(UpdateItemReq) returns (UpdateItemRes);
+  rpc DeleteItem(DeleteItemReq) returns (logi.common.Empty);
+  rpc ListItems(ListItemsReq) returns (ListItemsRes);
+  rpc MoveItem(MoveItemReq) returns (logi.common.Empty);
+  rpc SearchByBarcode(SearchByBarcodeReq) returns (ListItemsRes);
+}
+
+message Item {
+  string id = 1;
+  string parent_id = 2;
+  string owner_type = 3;      // "org" or "personal"
+  string organization_id = 4;
+  string user_id = 5;
+  string name = 6;
+  string barcode = 7;
+  string category = 8;
+  string description = 9;
+  string image_url = 10;
+  int32 quantity = 11;
+  string created_at = 12;
+  string updated_at = 13;
+}
+
+message CreateItemReq {
+  string parent_id = 1;
+  string owner_type = 2;      // "org" or "personal"
+  string name = 3;
+  string barcode = 4;
+  string category = 5;
+  string description = 6;
+  string image_url = 7;
+  int32 quantity = 8;
+}
+
+message CreateItemRes {
+  Item item = 1;
+}
+
+message GetItemReq {
+  string id = 1;
+}
+
+message GetItemRes {
+  Item item = 1;
+}
+
+message UpdateItemReq {
+  string id = 1;
+  string name = 2;
+  string barcode = 3;
+  string category = 4;
+  string description = 5;
+  string image_url = 6;
+  int32 quantity = 7;
+}
+
+message UpdateItemRes {
+  Item item = 1;
+}
+
+message DeleteItemReq {
+  string id = 1;
+}
+
+message ListItemsReq {
+  string parent_id = 1;       // empty = root items (parent_id IS NULL)
+  string owner_type = 2;      // "org", "personal", or empty = both
+  string category = 3;        // empty = all categories
+}
+
+message ListItemsRes {
+  repeated Item items = 1;
+}
+
+message MoveItemReq {
+  string id = 1;
+  string new_parent_id = 2;   // empty = move to root
+}
+
+message SearchByBarcodeReq {
+  string barcode = 1;
+}

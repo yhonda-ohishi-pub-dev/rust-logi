@@ -10,3 +10,5 @@ export * from "./gen/auth_pb";
 export * from "./gen/organization_pb";
 export * from "./gen/sso_settings_pb";
 export * from "./gen/bot_config_pb";
+export * from "./gen/access_request_pb";
+export * from "./gen/items_pb";

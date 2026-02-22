@@ -54,6 +54,19 @@ pub async fn get_current_organization(conn: &mut PgConnection) -> Result<Option<
     Ok(result.and_then(|(org,)| org))
 }
 
+/// Sets the current user for the database session (for personal items RLS).
+/// This must be called alongside set_current_organization for dual-owner tables.
+pub async fn set_current_user(
+    conn: &mut PgConnection,
+    user_id: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("SELECT set_current_user_id($1)")
+        .bind(user_id)
+        .execute(conn)
+        .await?;
+    Ok(())
+}
+
 /// Extension trait for executing queries within an organization context.
 pub trait OrganizationContext {
     /// Executes the given closure within an organization context.

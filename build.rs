@@ -25,6 +25,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 format!("{}/member.proto", proto_dir),
                 format!("{}/sso_settings.proto", proto_dir),
                 format!("{}/bot_config.proto", proto_dir),
+                format!("{}/access_request.proto", proto_dir),
+                format!("{}/items.proto", proto_dir),
             ],
             &[proto_dir],
         )?;

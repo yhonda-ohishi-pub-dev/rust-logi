@@ -19,6 +19,8 @@ use rust_logi::proto::organization::organization_service_server::OrganizationSer
 use rust_logi::proto::member::member_service_server::MemberServiceServer;
 use rust_logi::proto::sso_settings::sso_settings_service_server::SsoSettingsServiceServer;
 use rust_logi::proto::bot_config::bot_config_service_server::BotConfigServiceServer;
+use rust_logi::proto::access_request::access_request_service_server::AccessRequestServiceServer;
+use rust_logi::proto::items::items_service_server::ItemsServiceServer;
 use rust_logi::services::cam_files_service::CamFileExeStageServiceImpl;
 use rust_logi::services::flickr_service::FlickrConfig;
 use rust_logi::services::{
@@ -28,6 +30,8 @@ use rust_logi::services::{
     AuthServiceImpl, OrganizationServiceImpl, MemberServiceImpl,
     SsoSettingsServiceImpl,
     BotConfigServiceImpl,
+    AccessRequestServiceImpl,
+    ItemsServiceImpl,
 };
 use rust_logi::storage::GcsClient;
 
@@ -113,6 +117,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         SsoSettingsServiceImpl::new(pool.clone(), config.jwt_secret.clone());
     let bot_config_service =
         BotConfigServiceImpl::new(pool.clone(), config.jwt_secret.clone());
+    let access_request_service = AccessRequestServiceImpl::new(
+        pool.clone(),
+        config.clone(),
+        http_client.clone(),
+    );
+
+    let items_service = ItemsServiceImpl::new(pool.clone());
 
     // Auth middleware layer
     let auth_layer = AuthLayer::new(pool.clone(), config.jwt_secret.clone());
@@ -156,6 +167,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(MemberServiceServer::new(member_service))
         .add_service(SsoSettingsServiceServer::new(sso_settings_service))
         .add_service(BotConfigServiceServer::new(bot_config_service))
+        .add_service(AccessRequestServiceServer::new(access_request_service))
+        .add_service(ItemsServiceServer::new(items_service))
         .serve(addr)
         .await?;
 

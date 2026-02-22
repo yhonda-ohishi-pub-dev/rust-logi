@@ -72,6 +72,7 @@ impl MemberServiceImpl {
         org_id: &str,
         username: &str,
         provider: &str,
+        org_slug: &str,
     ) -> Result<(String, chrono::DateTime<Utc>), Status> {
         let now = Utc::now();
         let exp = now + chrono::Duration::hours(24);
@@ -82,6 +83,7 @@ impl MemberServiceImpl {
             exp: exp.timestamp(),
             iat: now.timestamp(),
             provider: provider.to_string(),
+            org_slug: org_slug.to_string(),
         };
         let token = encode(
             &Header::default(),
@@ -182,17 +184,18 @@ impl MemberService for MemberServiceImpl {
         }
 
         // 1. Find valid invitation
-        let inv: Option<(String, String, String, String)> = sqlx::query_as(
-            "SELECT id::text, organization_id::text, email, role
-             FROM invitations
-             WHERE token = $1 AND accepted_at IS NULL AND expires_at > NOW()",
+        let inv: Option<(String, String, String, String, String)> = sqlx::query_as(
+            "SELECT i.id::text, i.organization_id::text, i.email, i.role, o.slug
+             FROM invitations i
+             JOIN organizations o ON o.id = i.organization_id
+             WHERE i.token = $1 AND i.accepted_at IS NULL AND i.expires_at > NOW()",
         )
         .bind(&req.token)
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
 
-        let (inv_id, org_id, inv_email, inv_role) =
+        let (inv_id, org_id, inv_email, inv_role, org_slug) =
             inv.ok_or_else(|| Status::not_found("Invalid or expired invitation"))?;
 
         // 2. Hash password
@@ -287,7 +290,7 @@ impl MemberService for MemberServiceImpl {
             .map_err(|e| Status::internal(format!("Transaction commit error: {}", e)))?;
 
         // Issue JWT (auto-login)
-        let (token, exp) = self.issue_jwt(&user_id, &org_id, &inv_email, "password")?;
+        let (token, exp) = self.issue_jwt(&user_id, &org_id, &inv_email, "password", &org_slug)?;
 
         Ok(Response::new(AuthResponse {
             token,

@@ -52,3 +52,11 @@ pub mod sso_settings {
 pub mod bot_config {
     include!("logi.bot_config.rs");
 }
+
+pub mod access_request {
+    include!("logi.access_request.rs");
+}
+
+pub mod items {
+    include!("logi.items.rs");
+}
