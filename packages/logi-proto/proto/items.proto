@@ -10,6 +10,7 @@ service ItemsService {
   rpc DeleteItem(DeleteItemReq) returns (logi.common.Empty);
   rpc ListItems(ListItemsReq) returns (ListItemsRes);
   rpc MoveItem(MoveItemReq) returns (logi.common.Empty);
+  rpc ChangeItemOwnership(ChangeItemOwnershipReq) returns (logi.common.Empty);
   rpc SearchByBarcode(SearchByBarcodeReq) returns (ListItemsRes);
 }
 
@@ -27,6 +28,8 @@ message Item {
   int32 quantity = 11;
   string created_at = 12;
   string updated_at = 13;
+  string url = 14;
+  string item_type = 15;   // "folder" or "item"
 }
 
 message CreateItemReq {
@@ -38,6 +41,8 @@ message CreateItemReq {
   string description = 6;
   string image_url = 7;
   int32 quantity = 8;
+  string url = 9;
+  string item_type = 10;   // "folder" or "item" (default: "item")
 }
 
 message CreateItemRes {
@@ -60,6 +65,7 @@ message UpdateItemReq {
   string description = 5;
   string image_url = 6;
   int32 quantity = 7;
+  string url = 8;
 }
 
 message UpdateItemRes {
@@ -83,6 +89,11 @@ message ListItemsRes {
 message MoveItemReq {
   string id = 1;
   string new_parent_id = 2;   // empty = move to root
+}
+
+message ChangeItemOwnershipReq {
+  string id = 1;
+  string new_owner_type = 2;  // "org" or "personal"
 }
 
 message SearchByBarcodeReq {

@@ -13,6 +13,8 @@ pub struct ItemModel {
     pub category: Option<String>,
     pub description: Option<String>,
     pub image_url: Option<String>,
+    pub url: Option<String>,
+    pub item_type: String,
     pub quantity: i32,
     pub created_at: String,
     pub updated_at: String,

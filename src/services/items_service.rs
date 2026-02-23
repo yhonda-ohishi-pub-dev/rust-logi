@@ -7,8 +7,9 @@ use crate::models::ItemModel;
 use crate::proto::common::Empty;
 use crate::proto::items::items_service_server::ItemsService;
 use crate::proto::items::{
-    CreateItemReq, CreateItemRes, DeleteItemReq, GetItemReq, GetItemRes, Item, ListItemsReq,
-    ListItemsRes, MoveItemReq, SearchByBarcodeReq, UpdateItemReq, UpdateItemRes,
+    ChangeItemOwnershipReq, CreateItemReq, CreateItemRes, DeleteItemReq, GetItemReq, GetItemRes,
+    Item, ListItemsReq, ListItemsRes, MoveItemReq, SearchByBarcodeReq, UpdateItemReq,
+    UpdateItemRes,
 };
 
 pub struct ItemsServiceImpl {
@@ -40,6 +41,8 @@ impl ItemsServiceImpl {
             category: model.category.clone().unwrap_or_default(),
             description: model.description.clone().unwrap_or_default(),
             image_url: model.image_url.clone().unwrap_or_default(),
+            url: model.url.clone().unwrap_or_default(),
+            item_type: model.item_type.clone(),
             quantity: model.quantity,
             created_at: model.created_at.clone(),
             updated_at: model.updated_at.clone(),
@@ -117,6 +120,21 @@ impl ItemsService for ItemsServiceImpl {
         } else {
             Some(&req.image_url)
         };
+        let url: Option<&str> = if req.url.is_empty() {
+            None
+        } else {
+            Some(&req.url)
+        };
+        let item_type = if req.item_type.is_empty() {
+            "item"
+        } else {
+            &req.item_type
+        };
+        if item_type != "folder" && item_type != "item" {
+            return Err(Status::invalid_argument(
+                "item_type must be 'folder' or 'item'",
+            ));
+        }
         let quantity = if req.quantity == 0 { 1 } else { req.quantity };
 
         // Set org_id or user_id based on owner_type
@@ -127,10 +145,10 @@ impl ItemsService for ItemsServiceImpl {
         };
 
         let model: ItemModel = sqlx::query_as(
-            "INSERT INTO items (parent_id, owner_type, organization_id, user_id, name, barcode, category, description, image_url, quantity) \
-             VALUES ($1::uuid, $2, $3::uuid, $4::uuid, $5, $6, $7, $8, $9, $10) \
+            "INSERT INTO items (parent_id, owner_type, organization_id, user_id, name, barcode, category, description, image_url, url, item_type, quantity) \
+             VALUES ($1::uuid, $2, $3::uuid, $4::uuid, $5, $6, $7, $8, $9, $10, $11, $12) \
              RETURNING id::text, parent_id::text, owner_type, organization_id::text, user_id::text, \
-             name, barcode, category, description, image_url, quantity, \
+             name, barcode, category, description, image_url, url, item_type, quantity, \
              created_at::text, updated_at::text",
         )
         .bind(parent_id)
@@ -142,6 +160,8 @@ impl ItemsService for ItemsServiceImpl {
         .bind(category)
         .bind(description)
         .bind(image_url)
+        .bind(url)
+        .bind(item_type)
         .bind(quantity)
         .fetch_one(&mut *conn)
         .await
@@ -167,7 +187,7 @@ impl ItemsService for ItemsServiceImpl {
 
         let model: Option<ItemModel> = sqlx::query_as(
             "SELECT id::text, parent_id::text, owner_type, organization_id::text, user_id::text, \
-             name, barcode, category, description, image_url, quantity, \
+             name, barcode, category, description, image_url, url, item_type, quantity, \
              created_at::text, updated_at::text \
              FROM items WHERE id = $1::uuid",
         )
@@ -217,13 +237,18 @@ impl ItemsService for ItemsServiceImpl {
         } else {
             Some(&req.image_url)
         };
+        let url: Option<&str> = if req.url.is_empty() {
+            None
+        } else {
+            Some(&req.url)
+        };
 
         let model: Option<ItemModel> = sqlx::query_as(
             "UPDATE items SET name = $1, barcode = $2, category = $3, description = $4, \
-             image_url = $5, quantity = $6, updated_at = NOW() \
-             WHERE id = $7::uuid \
+             image_url = $5, url = $6, quantity = $7, updated_at = NOW() \
+             WHERE id = $8::uuid \
              RETURNING id::text, parent_id::text, owner_type, organization_id::text, user_id::text, \
-             name, barcode, category, description, image_url, quantity, \
+             name, barcode, category, description, image_url, url, item_type, quantity, \
              created_at::text, updated_at::text",
         )
         .bind(&req.name)
@@ -231,6 +256,7 @@ impl ItemsService for ItemsServiceImpl {
         .bind(category)
         .bind(description)
         .bind(image_url)
+        .bind(url)
         .bind(req.quantity)
         .bind(&req.id)
         .fetch_optional(&mut *conn)
@@ -321,7 +347,7 @@ impl ItemsService for ItemsServiceImpl {
 
         let sql = format!(
             "SELECT id::text, parent_id::text, owner_type, organization_id::text, user_id::text, \
-             name, barcode, category, description, image_url, quantity, \
+             name, barcode, category, description, image_url, url, item_type, quantity, \
              created_at::text, updated_at::text \
              FROM items {} ORDER BY name ASC",
             where_clause
@@ -383,6 +409,69 @@ impl ItemsService for ItemsServiceImpl {
         Ok(Response::new(Empty {}))
     }
 
+    async fn change_item_ownership(
+        &self,
+        request: Request<ChangeItemOwnershipReq>,
+    ) -> Result<Response<Empty>, Status> {
+        let auth_user = Self::get_authenticated_user(&request)?;
+        let req = request.into_inner();
+
+        tracing::info!(
+            "ChangeItemOwnership called: id={}, new_owner_type={}, user_id={}, org_id={}",
+            req.id, req.new_owner_type, auth_user.user_id, auth_user.org_id
+        );
+
+        if req.id.is_empty() {
+            return Err(Status::invalid_argument("id is required"));
+        }
+
+        let (new_org_id, new_user_id): (Option<&str>, Option<&str>) =
+            match req.new_owner_type.as_str() {
+                "org" => (Some(&auth_user.org_id), None),
+                "personal" => (None, Some(&auth_user.user_id)),
+                _ => {
+                    return Err(Status::invalid_argument(
+                        "new_owner_type must be 'org' or 'personal'",
+                    ))
+                }
+            };
+
+        let mut conn = self.setup_dual_rls(&auth_user).await?;
+
+        let rows_affected = sqlx::query(
+            r#"WITH RECURSIVE descendants AS (
+                SELECT id FROM items WHERE id = $1::uuid
+                UNION ALL
+                SELECT i.id FROM items i JOIN descendants d ON i.parent_id = d.id
+            )
+            UPDATE items SET
+                owner_type = $2,
+                organization_id = $3::uuid,
+                user_id = $4::uuid,
+                updated_at = NOW()
+            WHERE id IN (SELECT id FROM descendants)"#,
+        )
+        .bind(&req.id)
+        .bind(&req.new_owner_type)
+        .bind(new_org_id)
+        .bind(new_user_id)
+        .execute(&mut *conn)
+        .await
+        .map_err(|e| Status::internal(format!("Database error: {}", e)))?
+        .rows_affected();
+
+        tracing::info!(
+            "ChangeItemOwnership result: id={}, rows_affected={}",
+            req.id, rows_affected
+        );
+
+        if rows_affected == 0 {
+            return Err(Status::not_found("Item not found"));
+        }
+
+        Ok(Response::new(Empty {}))
+    }
+
     async fn search_by_barcode(
         &self,
         request: Request<SearchByBarcodeReq>,
@@ -398,7 +487,7 @@ impl ItemsService for ItemsServiceImpl {
 
         let models: Vec<ItemModel> = sqlx::query_as(
             "SELECT id::text, parent_id::text, owner_type, organization_id::text, user_id::text, \
-             name, barcode, category, description, image_url, quantity, \
+             name, barcode, category, description, image_url, url, item_type, quantity, \
              created_at::text, updated_at::text \
              FROM items WHERE barcode = $1 ORDER BY name ASC",
         )
