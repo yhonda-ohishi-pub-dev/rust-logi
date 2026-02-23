@@ -12,6 +12,7 @@ service ItemsService {
   rpc MoveItem(MoveItemReq) returns (logi.common.Empty);
   rpc ChangeItemOwnership(ChangeItemOwnershipReq) returns (logi.common.Empty);
   rpc SearchByBarcode(SearchByBarcodeReq) returns (ListItemsRes);
+  rpc ConvertItemType(ConvertItemTypeReq) returns (ConvertItemTypeRes);
 }
 
 message Item {
@@ -98,4 +99,14 @@ message ChangeItemOwnershipReq {
 
 message SearchByBarcodeReq {
   string barcode = 1;
+}
+
+message ConvertItemTypeReq {
+  string id = 1;
+  string new_item_type = 2;   // "folder" or "item"
+}
+
+message ConvertItemTypeRes {
+  Item item = 1;
+  int32 children_moved = 2;   // 親に移動した子の件数
 }

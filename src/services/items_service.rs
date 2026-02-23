@@ -7,9 +7,9 @@ use crate::models::ItemModel;
 use crate::proto::common::Empty;
 use crate::proto::items::items_service_server::ItemsService;
 use crate::proto::items::{
-    ChangeItemOwnershipReq, CreateItemReq, CreateItemRes, DeleteItemReq, GetItemReq, GetItemRes,
-    Item, ListItemsReq, ListItemsRes, MoveItemReq, SearchByBarcodeReq, UpdateItemReq,
-    UpdateItemRes,
+    ChangeItemOwnershipReq, ConvertItemTypeReq, ConvertItemTypeRes, CreateItemReq, CreateItemRes,
+    DeleteItemReq, GetItemReq, GetItemRes, Item, ListItemsReq, ListItemsRes, MoveItemReq,
+    SearchByBarcodeReq, UpdateItemReq, UpdateItemRes,
 };
 
 pub struct ItemsServiceImpl {
@@ -498,5 +498,87 @@ impl ItemsService for ItemsServiceImpl {
 
         let items: Vec<Item> = models.iter().map(Self::model_to_proto).collect();
         Ok(Response::new(ListItemsRes { items }))
+    }
+
+    async fn convert_item_type(
+        &self,
+        request: Request<ConvertItemTypeReq>,
+    ) -> Result<Response<ConvertItemTypeRes>, Status> {
+        let auth_user = Self::get_authenticated_user(&request)?;
+        let req = request.into_inner();
+
+        if req.id.is_empty() {
+            return Err(Status::invalid_argument("id is required"));
+        }
+        if req.new_item_type != "folder" && req.new_item_type != "item" {
+            return Err(Status::invalid_argument(
+                "new_item_type must be 'folder' or 'item'",
+            ));
+        }
+
+        let mut conn = self.setup_dual_rls(&auth_user).await?;
+
+        // 現在のアイテムを取得（parent_id確認用）
+        let current: Option<ItemModel> = sqlx::query_as(
+            "SELECT id::text, parent_id::text, owner_type, organization_id::text, user_id::text, \
+             name, barcode, category, description, image_url, url, item_type, quantity, \
+             created_at::text, updated_at::text \
+             FROM items WHERE id = $1::uuid",
+        )
+        .bind(&req.id)
+        .fetch_optional(&mut *conn)
+        .await
+        .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
+
+        let current = current.ok_or_else(|| Status::not_found("Item not found"))?;
+
+        // 同種への変換はno-op
+        if current.item_type == req.new_item_type {
+            return Ok(Response::new(ConvertItemTypeRes {
+                item: Some(Self::model_to_proto(&current)),
+                children_moved: 0,
+            }));
+        }
+
+        let mut children_moved: i32 = 0;
+
+        // Folder → Item: 子アイテムを親フォルダに昇格
+        if current.item_type == "folder" && req.new_item_type == "item" {
+            let parent_id_for_children: Option<&str> = current.parent_id.as_deref();
+
+            let result = sqlx::query(
+                "UPDATE items SET parent_id = $1::uuid, updated_at = NOW() \
+                 WHERE parent_id = $2::uuid",
+            )
+            .bind(parent_id_for_children)
+            .bind(&req.id)
+            .execute(&mut *conn)
+            .await
+            .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
+
+            children_moved = result.rows_affected() as i32;
+        }
+
+        // item_type を更新
+        let model: Option<ItemModel> = sqlx::query_as(
+            "UPDATE items SET item_type = $1, updated_at = NOW() \
+             WHERE id = $2::uuid \
+             RETURNING id::text, parent_id::text, owner_type, organization_id::text, user_id::text, \
+             name, barcode, category, description, image_url, url, item_type, quantity, \
+             created_at::text, updated_at::text",
+        )
+        .bind(&req.new_item_type)
+        .bind(&req.id)
+        .fetch_optional(&mut *conn)
+        .await
+        .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
+
+        match model {
+            Some(m) => Ok(Response::new(ConvertItemTypeRes {
+                item: Some(Self::model_to_proto(&m)),
+                children_moved,
+            })),
+            None => Err(Status::internal("Update failed unexpectedly")),
+        }
     }
 }
