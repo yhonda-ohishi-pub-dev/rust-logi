@@ -325,6 +325,107 @@ FormData: resourceName={fileName}, Filedata={binaryFile}
 
 ---
 
+## 完了: 複数組織対応 — 組織切り替え機能
+
+### 背景
+ユーザーが複数の組織に所属する場合、ログイン後に組織を切り替える手段がなかった。`user_organizations` テーブル（多対多）と `ListMyOrganizations` RPC は既存。不足していた「組織切り替え → 新JWT発行」フローとフロントエンドUIを追加。
+
+### 方式: SwitchOrganization RPC（新JWT発行）
+- JWT の `org` / `org_slug` が常に正しく反映される
+- cookie による cross-subdomain 共有も正しい org を反映
+
+### 変更ファイル
+
+| リポジトリ | ファイル | 変更内容 |
+|-----------|---------|---------|
+| rust-logi | `packages/logi-proto/proto/auth.proto` | `SwitchOrganization` RPC + `SwitchOrganizationRequest` 追加 |
+| rust-logi | `src/services/auth_service.rs` | `switch_organization` 実装（メンバーシップ確認 + JWT再発行） |
+| auth-worker | `src/handlers/api-switch-org.ts` | POST `/api/switch-org`（CORS対応） |
+| auth-worker | `src/handlers/api-my-orgs.ts` | POST `/api/my-orgs`（CORS対応） |
+| auth-worker | `src/index.ts` | ルート + OPTIONS preflight 追加 |
+| auth-worker | `src/lib/errors.ts` | `extractToken`, `corsJsonResponse`, `corsPreflight` 共通ユーティリティ |
+| auth-client | `packages/auth-client/src/useAuth.ts` | `OrgInfo`, `fetchOrganizations`, `switchOrganization`, `isMultiOrg` 追加 |
+| auth-client | `packages/auth-client/src/AuthToolbar.vue` | 複数組織時ドロップダウン切替UI |
+| nuxt-pwa-carins | `plugins/auth.client.ts` | 認証後に `fetchOrganizations()` 呼び出し |
+| nuxt-items | `plugins/auth.client.ts` | 同上 |
+
+### auth_service.rs の switch_organization 実装ポイント
+- `AuthenticatedUser` は `username` を持たないため、`app_users` テーブルから `COALESCE(email, display_name)` で取得
+- `user_organizations` + `organizations` JOIN でメンバーシップ確認 + `org_slug` 取得
+- PUBLIC_PATHS に追加しない（JWT認証必須）
+
+### auth-worker の共通ユーティリティ（lib/errors.ts）
+```typescript
+extractToken(request)    // Authorization: Bearer <token> からトークン抽出
+corsJsonResponse(data)   // JSON レスポンス + CORS ヘッダー
+corsPreflight()          // OPTIONS preflight レスポンス
+```
+新しい cross-origin API ハンドラではこれらを使うこと。
+
+### フロントエンドの動作
+1. 認証成功後 `fetchOrganizations()` で所属組織一覧取得
+2. 複数組織の場合、AuthToolbar に組織切替ドロップダウン表示
+3. 選択時 `switchOrganization(orgId)` → 新JWT発行 → `window.location.reload()`
+
+### デプロイ済み
+- rust-logi: Cloud Run
+- auth-worker: Cloudflare Workers (`auth.mtamaramu.com`)
+- auth-client: GitHub Packages (`@yhonda-ohishi-pub-dev/auth-client`)
+- nuxt-pwa-carins: Cloudflare Pages
+- nuxt-items: Cloudflare Workers (`items.mtamaramu.com`)
+
+---
+
+## 完了: items.mtamaramu.com マルチブラウザ同期
+
+### 背景
+items.mtamaramu.com はリクエスト-レスポンス型の gRPC-Web 通信のみで、複数ブラウザ/デバイス間でのリアルタイム同期機能がなかった。Cloudflare Durable Objects の WebSocket Hibernation API を使い、クロスデバイスのリアルタイム同期を実装。
+
+### アーキテクチャ
+```
+Browser A ──WebSocket──┐
+Browser B ──WebSocket──┤→ ItemsSyncDO (Hibernation API)
+Browser C ──WebSocket──┘    Room: items-{orgId}
+
+CRUD flow:
+  Browser A: gRPC create → success → WS notify → ItemsSyncDO → broadcast
+  Browser B: receive notification → refetch items
+  同一ブラウザ他タブ: BroadcastChannel → refetch items
+```
+
+### 接続先
+- WebSocket: `wss://sync.mtamaramu.com/ws/items/{orgId}?token=JWT`
+
+### 変更ファイル
+
+| リポジトリ | ファイル | 変更内容 |
+|-----------|---------|---------|
+| cf-grpc-proxy | `wrangler.toml` | `ItemsSyncDO` DO binding + migration + `sync.mtamaramu.com` カスタムドメイン |
+| cf-grpc-proxy | `src/index.ts` | `ItemsSyncDO` クラス (Hibernation API) + fetch handler WS ルーティング |
+| nuxt-items | `composables/useItemsSync.ts` | **新規**: WebSocket + BroadcastChannel 同期 composable |
+| nuxt-items | `composables/useItems.ts` | CRUD 後に `sync.notifyChange()` + `initSync()` メソッド追加 |
+| nuxt-items | `pages/index.vue` | `initSync()` 呼び出し + 同期状態ドット表示 |
+| nuxt-items | `wrangler.toml` | `NUXT_PUBLIC_SYNC_URL` 環境変数追加 |
+| nuxt-items | `nuxt.config.ts` | `runtimeConfig.public.syncUrl` 追加 |
+
+### ItemsSyncDO 設計ポイント
+- **Hibernation API**: アイドル時の課金ゼロ、`setWebSocketAutoResponse` で ping/pong を DO 起動なしで自動応答
+- **Room 粒度**: org_id 単位（`items-{orgId}`）— 1 DO インスタンスに同一組織の全クライアント
+- **personal items フィルタ**: `serializeAttachment({ userId })` で送信元を記録、personal アイテム変更は同一ユーザーの別デバイスにのみ通知
+- **メッセージ**: 軽量通知のみ（type, action, parentId, ownerType）→ クライアントが refetch
+- **JWT 認証**: WebSocket 接続時にクエリパラメータの JWT を既存の `verifyJwt()` で検証
+
+### クライアント同期ロジック
+- WebSocket: クロスデバイス同期（exponential backoff + jitter で自動再接続、visibilitychange で非表示タブの再接続抑制）
+- BroadcastChannel: 同一ブラウザのタブ間即時同期（サーバー不要）
+- 受信時: 同じフォルダ + ownerType 表示中なら即座に refetch、別フォルダは無視（ナビゲーション時に常に fetch するため）
+
+### デプロイ済み
+- cf-grpc-proxy: Cloudflare Workers (`sync.mtamaramu.com`)
+- nuxt-items: Cloudflare Workers (`items.mtamaramu.com`)
+
+---
+
 ## 完了: LINE WORKS 自動ログイン + useAuth 共通化
 
 ### 背景
