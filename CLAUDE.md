@@ -50,6 +50,30 @@ source .env && sqlx migrate run
 ./start.sh
 ```
 
+## デプロイ
+
+```bash
+# rust-logi (Cloud Run)
+./deploy.sh
+
+# auth-worker (Cloudflare Workers) — git push で自動デプロイ
+cd /home/yhonda/js/auth-worker && git push
+
+# auth-client (npm) — auth-worker の push 時に GitHub Actions で自動 publish
+
+# nuxt-pwa-carins (Cloudflare Workers) — ビルド必須
+cd /home/yhonda/js/nuxt-pwa-carins && npm run build && npx wrangler deploy
+
+# nuxt-items (Cloudflare Workers) — ビルド必須
+cd /home/yhonda/js/nuxt-items && npm run build && npx wrangler deploy
+
+# cf-grpc-proxy (Cloudflare Workers)
+cd /home/yhonda/js/nuxt_dtako_logs/cf-grpc-proxy && npx wrangler deploy
+
+# smb-upload-worker (Cloudflare Workers)
+cd /home/yhonda/js/smb-upload-worker && npx wrangler deploy
+```
+
 ## プロジェクト構成
 
 - `migrations/` - PostgreSQLマイグレーション (00001-00018)
@@ -372,6 +396,37 @@ corsPreflight()          // OPTIONS preflight レスポンス
 - auth-worker: Cloudflare Workers (`auth.mtamaramu.com`)
 - auth-client: GitHub Packages (`@yhonda-ohishi-pub-dev/auth-client`)
 - nuxt-pwa-carins: Cloudflare Pages
+- nuxt-items: Cloudflare Workers (`items.mtamaramu.com`)
+
+---
+
+## 完了: バーコード検索 — 楽天製品検索API統合
+
+### 背景
+items.mtamaramu.com のバーコード検索はローカルDB（gRPC `SearchByBarcode`）のみで、未登録商品の検索ができなかった。楽天製品検索APIを統合し、ローカル0件時に外部DBから商品情報を取得して表示 + ワンクリック登録できるようにした。
+
+### 検索順序
+1. **楽天製品検索API**（日本商品に強い） → サーバールート `/api/barcode-lookup` 経由
+2. **OpenFoodFacts**（海外食品フォールバック）
+3. **OpenProductsFacts**（海外非食品フォールバック）
+
+### 変更ファイル
+
+| リポジトリ | ファイル | 変更内容 |
+|-----------|---------|---------|
+| nuxt-items | `server/api/barcode-lookup.ts` | **新規**: 楽天APIプロキシ（Refererヘッダー必須のためサーバーサイド） |
+| nuxt-items | `composables/useProductLookup.ts` | 楽天APIを最優先ソースとして追加、OpenFacts系をフォールバックに |
+| nuxt-items | `pages/index.vue` | 検索フローに外部API統合（0件時自動検索 + 結果表示UI） |
+| nuxt-items | `components/items/ItemForm.vue` | `initialBarcode` prop追加、バーコード欄をフォーム先頭に移動 |
+
+### 楽天API設定
+- **エンドポイント**: `https://openapi.rakuten.co.jp/ichibaproduct/api/Product/Search/20250801`
+- **検索パラメータ**: `productCode`（JANコード直接指定）
+- **認証**: `applicationId` + `accessKey`（`wrangler secret` で管理）
+- **ローカル開発**: `nuxt-items/.env` にキー設定
+- **注意**: Refererヘッダー必須のため、ブラウザ直接呼び出し不可（サーバールート経由必須）
+
+### デプロイ済み
 - nuxt-items: Cloudflare Workers (`items.mtamaramu.com`)
 
 ---
