@@ -32,6 +32,11 @@ pub struct Config {
     pub server_host: String,
     pub server_port: u16,
     pub gcs_bucket: Option<String>,
+    pub storage_backend: Option<String>,
+    pub r2_bucket: Option<String>,
+    pub r2_account_id: Option<String>,
+    pub r2_access_key: Option<String>,
+    pub r2_secret_key: Option<String>,
     pub dtako_api_url: String,
     pub dvr_notification_enabled: bool,
     pub dvr_lineworks_bot_url: Option<String>,
@@ -53,6 +58,11 @@ impl Config {
                 .parse()
                 .unwrap_or(50051),
             gcs_bucket: env::var("GCS_BUCKET").ok(),
+            storage_backend: env::var("STORAGE_BACKEND").ok(),
+            r2_bucket: env::var("R2_BUCKET").ok(),
+            r2_account_id: env::var("R2_ACCOUNT_ID").ok(),
+            r2_access_key: env::var("R2_ACCESS_KEY").ok(),
+            r2_secret_key: env::var("R2_SECRET_KEY").ok(),
             dtako_api_url: env::var("DTAKO_API_URL").unwrap_or_else(|_| {
                 "https://hono-api.mtamaramu.com/api/dtakologs/currentListAllHome".to_string()
             }),

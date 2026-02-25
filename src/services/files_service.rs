@@ -13,17 +13,17 @@ use crate::proto::files::{
     GetFileRequest, ListFilesRequest, ListFilesResponse, RestoreFileRequest, RestoreFileResponse,
 };
 use crate::services::file_auto_parser::FileAutoParser;
-use crate::storage::{GcsClient, RestoreStatus};
+use crate::storage::{StorageBackend, RestoreStatus};
 
 pub struct FilesServiceImpl {
     pool: PgPool,
-    gcs_client: Option<Arc<GcsClient>>,
+    storage: Option<Arc<dyn StorageBackend>>,
     file_auto_parser: Arc<FileAutoParser>,
 }
 
 impl FilesServiceImpl {
-    pub fn new(pool: PgPool, gcs_client: Option<Arc<GcsClient>>, file_auto_parser: Arc<FileAutoParser>) -> Self {
-        Self { pool, gcs_client, file_auto_parser }
+    pub fn new(pool: PgPool, storage: Option<Arc<dyn StorageBackend>>, file_auto_parser: Arc<FileAutoParser>) -> Self {
+        Self { pool, storage, file_auto_parser }
     }
 
     fn model_to_proto(model: &FileModel) -> File {
@@ -56,7 +56,7 @@ impl FilesServiceImpl {
         current_storage_class: Option<&str>,
     ) {
         let pool = self.pool.clone();
-        let gcs_client = self.gcs_client.clone();
+        let storage = self.storage.clone();
         let gcs_key = gcs_key.to_string();
         let uuid = uuid.to_string();
         let organization_id = organization_id.to_string();
@@ -88,8 +88,8 @@ impl FilesServiceImpl {
                         && storage_class.as_deref() != Some("STANDARD");
 
                     if should_promote {
-                        if let Some(gcs_client) = gcs_client {
-                            match gcs_client.rewrite_to_standard(&gcs_key).await {
+                        if let Some(storage) = storage {
+                            match storage.rewrite_to_standard(&gcs_key).await {
                                 Ok(_) => {
                                     tracing::info!(
                                         "Promoted to STANDARD: uuid={}, access_count_7day={}",
@@ -162,7 +162,7 @@ impl FilesService for FilesServiceImpl {
         );
 
         // GCSが有効な場合はGCSにアップロード
-        if let Some(gcs_client) = &self.gcs_client {
+        if let Some(storage) = &self.storage {
             let gcs_key = Self::generate_gcs_key(&organization_id, &uuid);
 
             // ファイルデータを取得
@@ -175,8 +175,8 @@ impl FilesService for FilesServiceImpl {
                 return Err(Status::invalid_argument("No content or blob_base64 provided"));
             };
 
-            // GCSにアップロード
-            gcs_client
+            // ストレージにアップロード
+            storage
                 .upload(&gcs_key, &data, &req.r#type)
                 .await
                 .map_err(|e| Status::internal(format!("GCS upload failed: {}", e)))?;
@@ -432,22 +432,19 @@ impl FilesService for FilesServiceImpl {
 
         let (tx, rx) = tokio::sync::mpsc::channel(4);
 
-        // GCSからダウンロード
-        if let (Some(gcs_client), Some(gcs_key)) = (&self.gcs_client, &file.s3_key) {
-            // GCSオブジェクト情報を取得
-            let info = gcs_client
+        // ストレージからダウンロード
+        if let (Some(storage), Some(gcs_key)) = (&self.storage, &file.s3_key) {
+            // オブジェクト情報を取得
+            let info = storage
                 .get_object_info(gcs_key)
                 .await
-                .map_err(|e| Status::internal(format!("GCS error: {}", e)))?;
+                .map_err(|e| Status::internal(format!("Storage error: {}", e)))?;
 
-            // GCSではすべてのストレージクラスが即座にアクセス可能
-            // （S3 Glacierとは異なる）
-
-            // GCSからダウンロード
-            let data = gcs_client
+            // ストレージからダウンロード
+            let data = storage
                 .download(gcs_key)
                 .await
-                .map_err(|e| Status::internal(format!("GCS download failed: {}", e)))?;
+                .map_err(|e| Status::internal(format!("Storage download failed: {}", e)))?;
 
             let total_size = data.len() as i64;
             let chunk_size = 64 * 1024; // 64KB chunks
@@ -643,21 +640,21 @@ impl FilesService for FilesServiceImpl {
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?
         .ok_or_else(|| Status::not_found(format!("File not found: {}", req.uuid)))?;
 
-        let Some(gcs_client) = &self.gcs_client else {
-            return Err(Status::failed_precondition("GCS storage not configured"));
+        let Some(storage) = &self.storage else {
+            return Err(Status::failed_precondition("Storage backend not configured"));
         };
 
         let Some(gcs_key) = &file.s3_key else {
             return Err(Status::failed_precondition(
-                "File is stored in database, not GCS",
+                "File is stored in database, not object storage",
             ));
         };
 
-        // GCSオブジェクト情報を取得
-        let info = gcs_client
+        // オブジェクト情報を取得
+        let info = storage
             .get_object_info(gcs_key)
             .await
-            .map_err(|e| Status::internal(format!("GCS error: {}", e)))?;
+            .map_err(|e| Status::internal(format!("Storage error: {}", e)))?;
 
         // GCSではすべてのストレージクラスが即座にアクセス可能
         let (restore_status, message) = match info.restore_status {

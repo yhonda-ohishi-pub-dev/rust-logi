@@ -12,13 +12,13 @@ use crate::proto::dvr_notifications::{
     BulkCreateDvrNotificationsRequest, BulkCreateDvrNotificationsResponse, DvrNotification,
     RetryPendingDownloadsRequest, RetryPendingDownloadsResponse,
 };
-use crate::storage::GcsClient;
+use crate::storage::StorageBackend;
 
 pub struct DvrNotificationsServiceImpl {
     pool: PgPool,
     config: Config,
     http_client: Arc<HttpClient>,
-    gcs_client: Option<Arc<GcsClient>>,
+    storage: Option<Arc<dyn StorageBackend>>,
 }
 
 impl DvrNotificationsServiceImpl {
@@ -26,13 +26,13 @@ impl DvrNotificationsServiceImpl {
         pool: PgPool,
         config: Config,
         http_client: Arc<HttpClient>,
-        gcs_client: Option<Arc<GcsClient>>,
+        storage: Option<Arc<dyn StorageBackend>>,
     ) -> Self {
         Self {
             pool,
             config,
             http_client,
-            gcs_client,
+            storage,
         }
     }
 
@@ -106,10 +106,10 @@ impl DvrNotificationsServiceImpl {
         Ok(result.is_some())
     }
 
-    /// Spawn background task to download mp4 and store to GCS
+    /// Spawn background task to download mp4 and store to object storage
     fn spawn_mp4_download(&self, mp4_url: String, organization_id: String) {
-        let Some(gcs_client) = self.gcs_client.clone() else {
-            tracing::debug!("GCS client not configured, skipping mp4 download");
+        let Some(storage) = self.storage.clone() else {
+            tracing::debug!("Storage backend not configured, skipping mp4 download");
             return;
         };
 
@@ -119,7 +119,7 @@ impl DvrNotificationsServiceImpl {
         tokio::spawn(async move {
             if let Err(e) = download_and_store_mp4(
                 pool,
-                gcs_client,
+                storage,
                 http_client,
                 mp4_url.clone(),
                 organization_id,
@@ -132,10 +132,10 @@ impl DvrNotificationsServiceImpl {
     }
 }
 
-/// Download mp4 from external URL and store to GCS
+/// Download mp4 from external URL and store to object storage
 async fn download_and_store_mp4(
     pool: PgPool,
-    gcs_client: Arc<GcsClient>,
+    storage: Arc<dyn StorageBackend>,
     http_client: Arc<HttpClient>,
     mp4_url: String,
     organization_id: String,
@@ -164,13 +164,13 @@ async fn download_and_store_mp4(
     let uuid = Uuid::new_v4();
     let gcs_key = format!("{}/dvr/{}.mp4", organization_id, uuid);
 
-    // 3. Upload to GCS
-    gcs_client
+    // 3. Upload to storage
+    storage
         .upload(&gcs_key, &data, "video/mp4")
         .await
-        .map_err(|e| format!("GCS upload failed: {}", e))?;
+        .map_err(|e| format!("Storage upload failed: {}", e))?;
 
-    tracing::info!("Uploaded to GCS: {}", gcs_key);
+    tracing::info!("Uploaded to storage: {}", gcs_key);
 
     // 4. Update DB with gcs_key, file_size, and status
     sqlx::query(
@@ -336,12 +336,12 @@ impl DvrNotificationsService for DvrNotificationsServiceImpl {
             organization_id
         );
 
-        // Check if GCS client is configured
-        if self.gcs_client.is_none() {
+        // Check if storage backend is configured
+        if self.storage.is_none() {
             return Ok(Response::new(RetryPendingDownloadsResponse {
                 success: false,
                 pending_count: 0,
-                message: "GCS client not configured".to_string(),
+                message: "Storage backend not configured".to_string(),
             }));
         }
 

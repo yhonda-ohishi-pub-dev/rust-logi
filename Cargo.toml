@@ -39,6 +39,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Google Cloud Storage (using rustls for musl compatibility)
 google-cloud-storage = { version = "0.22", default-features = false, features = ["rustls-tls", "auth"] }
 
+# Cloudflare R2 (S3-compatible)
+rust-s3 = { version = "0.35", default-features = false, features = ["tokio-rustls-tls"] }
+
 # HTTP/Tower
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "trace"] }

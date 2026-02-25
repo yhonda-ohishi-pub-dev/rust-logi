@@ -33,7 +33,7 @@ use rust_logi::services::{
     AccessRequestServiceImpl,
     ItemsServiceImpl,
 };
-use rust_logi::storage::GcsClient;
+use rust_logi::storage::{StorageBackend, GcsBackend, R2Backend};
 
 use tonic::transport::Server;
 use tonic_reflection::server::Builder as ReflectionBuilder;
@@ -64,19 +64,50 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pool = create_pool(&config.database_url).await?;
     tracing::info!("Database connection established");
 
-    // Create GCS client if bucket is configured
-    let gcs_client = if let Some(bucket) = &config.gcs_bucket {
-        tracing::info!("GCS storage enabled: bucket={}", bucket);
-        match GcsClient::new(bucket.clone()).await {
-            Ok(client) => Some(Arc::new(client)),
-            Err(e) => {
-                tracing::error!("Failed to create GCS client: {}", e);
+    // Create storage backend based on STORAGE_BACKEND env var
+    let storage: Option<Arc<dyn StorageBackend>> = match config.storage_backend.as_deref() {
+        Some("r2") => {
+            let bucket = config.r2_bucket.as_ref()
+                .expect("R2_BUCKET required when STORAGE_BACKEND=r2");
+            let account_id = config.r2_account_id.as_ref()
+                .expect("R2_ACCOUNT_ID required when STORAGE_BACKEND=r2");
+            let access_key = config.r2_access_key.as_ref()
+                .expect("R2_ACCESS_KEY required when STORAGE_BACKEND=r2");
+            let secret_key = config.r2_secret_key.as_ref()
+                .expect("R2_SECRET_KEY required when STORAGE_BACKEND=r2");
+
+            tracing::info!("R2 storage enabled: bucket={}", bucket);
+            match R2Backend::new(
+                bucket.clone(),
+                account_id.clone(),
+                access_key.clone(),
+                secret_key.clone(),
+            ) {
+                Ok(backend) => Some(Arc::new(backend)),
+                Err(e) => {
+                    tracing::error!("Failed to create R2 backend: {}", e);
+                    None
+                }
+            }
+        }
+        Some("gcs") | None => {
+            if let Some(bucket) = &config.gcs_bucket {
+                tracing::info!("GCS storage enabled: bucket={}", bucket);
+                match GcsBackend::new(bucket.clone()).await {
+                    Ok(backend) => Some(Arc::new(backend)),
+                    Err(e) => {
+                        tracing::error!("Failed to create GCS backend: {}", e);
+                        None
+                    }
+                }
+            } else {
+                tracing::info!("No storage backend configured, using database blob storage");
                 None
             }
         }
-    } else {
-        tracing::info!("GCS storage disabled, using database blob storage");
-        None
+        Some(other) => {
+            panic!("Unknown STORAGE_BACKEND: '{}'. Expected 'gcs' or 'r2'", other);
+        }
     };
 
     // Create HTTP client for external API calls
@@ -84,7 +115,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create services
     let file_auto_parser = Arc::new(FileAutoParser::new(pool.clone()));
-    let files_service = FilesServiceImpl::new(pool.clone(), gcs_client.clone(), file_auto_parser);
+    let files_service = FilesServiceImpl::new(pool.clone(), storage.clone(), file_auto_parser);
     let car_inspection_service = CarInspectionServiceImpl::new(
         pool.clone(),
         http_client.clone(),
@@ -104,7 +135,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         pool.clone(),
         config.clone(),
         http_client.clone(),
-        gcs_client.clone(),
+        storage.clone(),
     );
     let auth_service = AuthServiceImpl::new(
         pool.clone(),
