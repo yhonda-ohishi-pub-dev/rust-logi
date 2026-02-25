@@ -84,8 +84,13 @@ DATABASE_URL="postgresql://rust_logi_app:Zo6hYIWs7yH0sTah@db.tvbjvhvslgdwwlhpkez
 ## デプロイ
 
 ```bash
-# rust-logi (Cloud Run)
+# rust-logi (CF Containers) — メインのバックエンド
+cd /home/yhonda/rust/rust-logi/cf-container && npx wrangler deploy
+# ※ コンテナ ID を更新する場合は src/index.ts の getContainer() 引数を変更
+
+# rust-logi (Cloud Run) — フォールバック用（フロントエンドからは未使用）
 ./deploy.sh
+# ※ Docker キャッシュ問題あり: src変更時は docker build --no-cache を使うこと
 
 # auth-worker (Cloudflare Workers) — git push で自動デプロイ
 cd /home/yhonda/js/auth-worker && git push
@@ -105,9 +110,36 @@ cd /home/yhonda/js/nuxt_dtako_logs/cf-grpc-proxy && npx wrangler deploy
 cd /home/yhonda/js/smb-upload-worker && npx wrangler deploy
 ```
 
+## CF Containers 構成
+
+### アーキテクチャ
+```
+ブラウザ → nuxt-items/nuxt-pwa-carins → cf-grpc-proxy → CF Container (api-container.mtamaramu.com)
+                                                          ↑ rust-logi gRPC-Web サーバー
+```
+
+### リポジトリ
+- **CF Container Worker**: https://github.com/yhonda-ohishi-pub-dev/rust-logi-container (public)
+- **ローカルパス**: `cf-container/`（.gitignore で除外、別リポ管理）
+
+### カスタムドメイン
+- `api-container.mtamaramu.com` — CF Container
+
+### Secrets 管理
+```bash
+# JWT_SECRET は全サービスで統一が必須（Secret Manager の値を使う）
+gcloud secrets versions access latest --secret=rust-logi-jwt-secret | npx wrangler secret put JWT_SECRET
+# cf-container/ と cf-grpc-proxy/ の両方で実行すること
+```
+
+### GrpcWebTrailerFix ミドルウェア
+- `src/middleware/grpc_web_fix.rs` — gRPC trailers-only レスポンスを body trailer frame に変換
+- CF Containers の `container.fetch()` が trailers-only を処理できないための対策
+- Server::builder のレイヤー順: GrpcWebTrailerFix → CORS → GrpcWeb → Auth
+
 ## プロジェクト構成
 
-- `migrations/` - PostgreSQLマイグレーション (00001-00018)
+- `migrations/` - PostgreSQLマイグレーション (00001-00032)
 - `src/db/organization.rs` - RLSヘルパー関数 (`set_current_organization`, `get_current_organization`)
 - `src/storage/mod.rs` - GCSクライアント
 - `packages/logi-proto/` - npmパッケージ（proto + 生成済みTypeScript）

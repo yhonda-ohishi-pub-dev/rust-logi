@@ -39,3 +39,6 @@ tools
 
 # CF Containers (separate repo)
 cf-container/
+
+# WebRTC signaling server (separate repo)
+cf-wbrtc-auth
