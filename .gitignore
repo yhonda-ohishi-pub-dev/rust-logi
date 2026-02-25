@@ -26,6 +26,7 @@ cloud-sql-proxy
 # Database dumps
 *.zip
 *.sql
+*.dump
 !migrations/*.sql
 
 # npm packages

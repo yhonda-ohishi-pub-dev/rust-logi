@@ -108,6 +108,9 @@ cd /home/yhonda/js/nuxt_dtako_logs/cf-grpc-proxy && npx wrangler deploy
 
 # smb-upload-worker (Cloudflare Workers)
 cd /home/yhonda/js/smb-upload-worker && npx wrangler deploy
+
+# cf-billing-monitor (Cloudflare Workers) — 日次請求レポート
+cd /home/yhonda/js/cf-billing-monitor && npx wrangler deploy
 ```
 
 ## CF Containers 構成
@@ -157,6 +160,7 @@ gcloud secrets versions access latest --secret=rust-logi-jwt-secret | npx wrangl
   - `smb-upload-worker/` → /home/yhonda/js/smb-upload-worker（SMBアップロード）
   - `auth-worker/` → /home/yhonda/js/auth-worker（JWT認証）
     - `packages/auth-client/` — 共通 Nuxt composable（`@yhonda-ohishi-pub-dev/auth-client`、GitHub Packages で公開）
+  - `cf-billing-monitor/` → /home/yhonda/js/cf-billing-monitor（日次請求レポート）
 - `services/` - バックエンドサービス参照（symlink）
   - `browser-render-rust/` → /home/yhonda/rust/browser-render_rust（DVRレンダリング）
     - `rust-scraper/` - git submodule（車両データスクレイピング）
