@@ -389,37 +389,15 @@ impl AuthService for AuthServiceImpl {
             Status::invalid_argument(format!("Unknown provider: {}", req.provider))
         })?;
 
-        // Try exact provider + external_org_id match
+        // Use SECURITY DEFINER function to bypass RLS (pre-auth: org unknown)
         let row: Option<(String, String, Option<String>)> = sqlx::query_as(
-            "SELECT c.client_id, o.name, c.woff_id
-             FROM sso_provider_configs c
-             JOIN organizations o ON o.id = c.organization_id
-             WHERE c.provider = $1 AND c.external_org_id = $2 AND c.enabled = TRUE
-               AND o.deleted_at IS NULL",
+            "SELECT * FROM resolve_sso_config($1, $2)",
         )
         .bind(&req.provider)
         .bind(&req.external_org_id)
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
-
-        // Fallback: try org slug match
-        let row = if row.is_none() {
-            sqlx::query_as(
-                "SELECT c.client_id, o.name, c.woff_id
-                 FROM organizations o
-                 JOIN sso_provider_configs c ON c.organization_id = o.id
-                 WHERE o.slug = $1 AND c.provider = $2 AND c.enabled = TRUE
-                   AND o.deleted_at IS NULL",
-            )
-            .bind(&req.external_org_id)
-            .bind(&req.provider)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(|e| Status::internal(format!("Database error: {}", e)))?
-        } else {
-            row
-        };
 
         match row {
             Some((client_id, org_name, woff_id)) => {
@@ -469,12 +447,9 @@ impl AuthService for AuthServiceImpl {
             Status::invalid_argument(format!("Unknown provider: {}", req.provider))
         })?;
 
-        // 1. Look up SSO config by provider + external_org_id
+        // 1. Look up SSO config — SECURITY DEFINER function to bypass RLS (pre-auth)
         let config_row: Option<(String, String, String, String)> = sqlx::query_as(
-            "SELECT c.client_id, c.client_secret_encrypted, c.organization_id::text, o.slug
-             FROM sso_provider_configs c
-             JOIN organizations o ON o.id = c.organization_id
-             WHERE c.provider = $1 AND c.external_org_id = $2 AND c.enabled = TRUE",
+            "SELECT * FROM lookup_sso_config_for_login($1, $2)",
         )
         .bind(&req.provider)
         .bind(&req.external_org_id)

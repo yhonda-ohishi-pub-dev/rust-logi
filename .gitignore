@@ -36,3 +36,6 @@ test/node_modules/
 test/240709_*
 .claude/skills
 tools
+
+# CF Containers (separate repo)
+cf-container/

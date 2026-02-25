@@ -7,6 +7,8 @@ hono-logiのRust実装（gRPC-Web対応）
 新しいセッション開始時は必ずここに記載されたファイルを読んで前回の状況を把握すること。
 handoverの全タスクが完了したら `handover/completed/` に移動し、ここのパスを削除すること。
 
+- `handover/2026-02-25_14-35.md` — GrpcWebTrailerFix ミドルウェア + CF Containers デプロイ（`incomplete envelope` エラー未解決）
+- `handover/2026-02-25_13-45.md` — Phase 3 CF Containers デプロイ（gRPC エラーレスポンス問題で中断）
 - `handover/2026-02-25_05-00.md` — Phase 2 ストレージ抽象化 GCS/R2 両対応（実装完了・デプロイ前）
 - `handover/2026-02-25_03-20.md` — Backend 移行 Supabase/CF Containers（Phase 0 完了・Phase 1 Cloud Run デプロイ待ち）
 - `handover/2026-02-23_19-30.md` — Items 詳細表示 + 所有権変更（デプロイ済み・「個人に移動」ボタン動作しない問題あり）

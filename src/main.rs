@@ -5,6 +5,7 @@ use rust_logi::config::Config;
 use rust_logi::db::create_pool;
 use rust_logi::http_client::HttpClient;
 use rust_logi::middleware::auth::AuthLayer;
+use rust_logi::middleware::grpc_web_fix::GrpcWebTrailerFixLayer;
 use rust_logi::proto::cam_files::cam_file_exe_stage_service_server::CamFileExeStageServiceServer;
 use rust_logi::proto::cam_files::cam_files_service_server::CamFilesServiceServer;
 use rust_logi::proto::car_inspection::car_inspection_files_service_server::CarInspectionFilesServiceServer;
@@ -178,6 +179,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Build and run server with gRPC-Web support
     Server::builder()
         .accept_http1(true) // Required for gRPC-Web
+        .layer(GrpcWebTrailerFixLayer::new()) // Fix trailers-only for CF Containers
         .layer(cors)
         .layer(tonic_web::GrpcWebLayer::new()) // Enable gRPC-Web
         .layer(auth_layer) // JWT authentication
