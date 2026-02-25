@@ -7,6 +7,10 @@ hono-logiのRust実装（gRPC-Web対応）
 新しいセッション開始時は必ずここに記載されたファイルを読んで前回の状況を把握すること。
 handoverの全タスクが完了したら `handover/completed/` に移動し、ここのパスを削除すること。
 
+- `handover/2026-02-25_05-00.md` — Phase 2 ストレージ抽象化 GCS/R2 両対応（実装完了・デプロイ前）
+- `handover/2026-02-25_03-20.md` — Backend 移行 Supabase/CF Containers（Phase 0 完了・Phase 1 Cloud Run デプロイ待ち）
+- `handover/2026-02-23_19-30.md` — Items 詳細表示 + 所有権変更（デプロイ済み・「個人に移動」ボタン動作しない問題あり）
+- `handover/2026-02-23_17-50.md` — Amazon 共有 URL → PWA 物品登録（デプロイ済み・E2E確認待ち・extractNameFromShareText 修正必要）
 - `handover/2026-02-22_17-08.md` — 組織slug表示完了 + 複数組織対応（次回タスク）
 - `handover/2026-02-22_10-30.md` — nuxt-items UI調整完了（全完了）
 - `handover/2026-02-22_07-05.md` — Items 機能（DB・バックエンド完了・フロントエンドデプロイ済み）
@@ -17,37 +21,62 @@ handoverの全タスクが完了したら `handover/completed/` に移動し、�
 
 ## データベース
 
+### Cloud SQL（既存・フォールバック用）
 - **DB**: Cloud SQL PostgreSQL (`cloudsql-sv:asia-northeast1:postgres-prod`)
 - **データベース名**: `rust_logi_test`
-- **マルチテナント**: RLS (Row Level Security) + `organization_id` カラム
+- **接続**: `postgres://postgres:kikuraku@127.0.0.1:5432/rust_logi_test`（Cloud SQL Proxy 経由）
+
+### Supabase（移行先・東京リージョン）
+- **プロジェクト**: `https://tvbjvhvslgdwwlhpkezh.supabase.co`
+- **リージョン**: Northeast Asia (Tokyo) ap-northeast-1
+- **データベース名**: `postgres`
+- **接続**: `postgresql://rust_logi_app:xxx@db.tvbjvhvslgdwwlhpkezh.supabase.co:5432/postgres`
+
+#### Supabase 接続の重要事項
+- **`rust_logi_app` ユーザーで接続すること**（NOBYPASSRLS）
+- Supabase の `postgres` ユーザーは `BYPASSRLS=true` のため **RLS が効かない**
+- `rust_logi_app` は RLS 対象なので `set_current_organization()` が正しく動作する
+- **Supavisor transaction mode (port 6543) は使用不可** — `set_config` がリセットされる
+- 必ず **直接接続 (port 5432)** を使用すること
+
+### マルチテナント
+- RLS (Row Level Security) + `organization_id` カラム
+- 28テーブルに FORCE ROW LEVEL SECURITY 適用
 
 ### マイグレーション管理
 
 sqlxが`_sqlx_migrations`テーブルで管理。状態確認:
 ```bash
+# Cloud SQL
 PGPASSWORD=kikuraku psql -h 127.0.0.1 -p 5432 -U postgres -d rust_logi_test \
+  -c "SELECT version, description, installed_on FROM _sqlx_migrations ORDER BY version;"
+
+# Supabase
+PGPASSWORD=Zo6hYIWs7yH0sTah psql -h db.tvbjvhvslgdwwlhpkezh.supabase.co -p 5432 -U postgres -d postgres \
   -c "SELECT version, description, installed_on FROM _sqlx_migrations ORDER BY version;"
 ```
 
 ### マイグレーション実行
 
 ```bash
+# Cloud SQL
 sqlx migrate run --database-url "postgres://postgres:kikuraku@127.0.0.1:5432/rust_logi_test"
-```
 
-または`.env`を読み込んで:
-```bash
-source .env && sqlx migrate run
+# Supabase（postgres ユーザーで実行 — DDL には BYPASSRLS が必要）
+sqlx migrate run --database-url "postgresql://postgres:Zo6hYIWs7yH0sTah@db.tvbjvhvslgdwwlhpkezh.supabase.co:5432/postgres"
 ```
 
 ## 起動方法
 
 ```bash
-# ターミナル1: Cloud SQL Proxy起動（なければ自動ダウンロード）
+# ターミナル1: Cloud SQL Proxy起動（Cloud SQL 使用時のみ）
 ./start-proxy.sh
 
-# ターミナル2: サーバー起動
+# ターミナル2: サーバー起動（Cloud SQL）
 ./start.sh
+
+# Supabase で起動する場合
+DATABASE_URL="postgresql://rust_logi_app:Zo6hYIWs7yH0sTah@db.tvbjvhvslgdwwlhpkezh.supabase.co:5432/postgres" cargo run --release
 ```
 
 ## デプロイ
