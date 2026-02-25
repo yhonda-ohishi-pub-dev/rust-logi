@@ -698,5 +698,8 @@ DVR通知受信 → DB保存(pending) → LINE通知 → tokio::spawn
 
 ### 注意事項
 - `RUST_LOGI_URL`と`RUST_LOGI_ORGANIZATION_ID`は必須（デフォルト値なし）
-- browser-render-rustはGCEのまま運用（Chrome安定性のため）
+- browser-render-rust は **Kagoya VPS** で運用（Chrome安定性のため）
 - grpc featureが必要（`--features grpc`）
+- `GRPC_SEND_TIMEOUT`（デフォルト30秒）— rust-logi への gRPC-Web 送信タイムアウト
+- gRPC 送信失敗時はジョブが Failed になり、cron スクリプトがメールアラートを送信する
+- デプロイ: `cd /home/yhonda/rust/browser-render_rust && bash scripts/deploy-kagoya.sh`
