@@ -36,12 +36,7 @@ impl OrganizationService for OrganizationServiceImpl {
 
         let rows: Vec<(String, String, String, String, chrono::DateTime<chrono::Utc>)> =
             sqlx::query_as(
-                "SELECT o.id::text, o.name, o.slug, uo.role, o.created_at
-                 FROM organizations o
-                 JOIN user_organizations uo ON uo.organization_id = o.id
-                 WHERE uo.user_id = $1::uuid
-                   AND o.deleted_at IS NULL
-                 ORDER BY o.created_at",
+                "SELECT * FROM list_user_orgs($1::uuid)",
             )
             .bind(&user.user_id)
             .fetch_all(&self.pool)

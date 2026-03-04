@@ -97,36 +97,23 @@ impl AuthService for AuthServiceImpl {
             .await
             .map_err(|e| Status::unauthenticated(format!("Google auth failed: {}", e)))?;
 
-        // 2. Check if user already exists via oauth_accounts
-        let existing: Option<(String,)> = sqlx::query_as(
-            "SELECT app_user_id::text FROM oauth_accounts WHERE provider = 'google' AND provider_account_id = $1",
+        // 2. Check if user already exists via oauth_accounts (SECURITY DEFINER)
+        let existing: Option<(String, String, String, String)> = sqlx::query_as(
+            "SELECT * FROM find_google_user($1)",
         )
         .bind(&google_claims.sub)
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
 
-        if let Some((existing_user_id,)) = existing {
+        if let Some((existing_user_id, org_id, email, org_slug)) = existing {
             // User already exists — treat as login
-            let row: (String, String, String) = sqlx::query_as(
-                "SELECT uo.organization_id::text, u.email, o.slug
-                 FROM user_organizations uo
-                 JOIN app_users u ON u.id = uo.user_id
-                 JOIN organizations o ON o.id = uo.organization_id
-                 WHERE uo.user_id = $1::uuid AND uo.is_default = true",
-            )
-            .bind(&existing_user_id)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(|e| Status::internal(format!("Database error: {}", e)))?
-            .ok_or_else(|| Status::internal("User has no default organization"))?;
-
-            let (token, exp) = self.issue_jwt(&existing_user_id, &row.0, &row.1, "google", &row.2)?;
+            let (token, exp) = self.issue_jwt(&existing_user_id, &org_id, &email, "google", &org_slug)?;
             return Ok(Response::new(AuthResponse {
                 token,
                 expires_at: exp.to_rfc3339(),
                 user_id: existing_user_id,
-                organization_id: row.0,
+                organization_id: org_id,
             }));
         }
 
@@ -138,63 +125,26 @@ impl AuthService for AuthServiceImpl {
             return Err(Status::invalid_argument("Organization name is required"));
         }
 
-        // 3. Create new user + org in a transaction
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|e| Status::internal(format!("Transaction error: {}", e)))?;
-
-        // Create app_user
-        let (user_id,): (String,) = sqlx::query_as(
-            "INSERT INTO app_users (email, display_name, avatar_url) VALUES ($1, $2, $3) RETURNING id::text",
+        // 3. Create new user + org via SECURITY DEFINER function
+        let (user_id, org_id): (String, String) = sqlx::query_as(
+            "SELECT * FROM signup_create_user_and_org($1, $2, $3, 'google', $4, $5, $6)",
         )
         .bind(&google_claims.email)
         .bind(google_claims.name.as_deref().unwrap_or(&google_claims.email))
         .bind(google_claims.picture.as_deref())
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(|e| Status::internal(format!("Failed to create user: {}", e)))?;
-
-        // Create oauth_account
-        sqlx::query(
-            "INSERT INTO oauth_accounts (app_user_id, provider, provider_account_id) VALUES ($1::uuid, 'google', $2)",
-        )
-        .bind(&user_id)
         .bind(&google_claims.sub)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| Status::internal(format!("Failed to create oauth account: {}", e)))?;
-
-        // Create organization
-        let (org_id,): (String,) = sqlx::query_as(
-            "INSERT INTO organizations (name, slug) VALUES ($1, $2) RETURNING id::text",
-        )
         .bind(&req.organization_name)
         .bind(&req.organization_slug)
-        .fetch_one(&mut *tx)
+        .fetch_one(&self.pool)
         .await
         .map_err(|e| {
-            if e.to_string().contains("unique") || e.to_string().contains("duplicate") {
+            let msg = e.to_string();
+            if msg.contains("unique") || msg.contains("duplicate") {
                 Status::already_exists("Organization slug already taken")
             } else {
-                Status::internal(format!("Failed to create organization: {}", e))
+                Status::internal(format!("Failed to create user: {}", e))
             }
         })?;
-
-        // Create user_organizations (admin + default)
-        sqlx::query(
-            "INSERT INTO user_organizations (user_id, organization_id, role, is_default) VALUES ($1::uuid, $2::uuid, 'admin', true)",
-        )
-        .bind(&user_id)
-        .bind(&org_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| Status::internal(format!("Failed to create user-org link: {}", e)))?;
-
-        tx.commit()
-            .await
-            .map_err(|e| Status::internal(format!("Transaction commit error: {}", e)))?;
 
         let (token, exp) = self.issue_jwt(&user_id, &org_id, &google_claims.email, "google", &req.organization_slug)?;
 
@@ -219,15 +169,9 @@ impl AuthService for AuthServiceImpl {
             .await
             .map_err(|e| Status::unauthenticated(format!("Google auth failed: {}", e)))?;
 
-        // 2. Look up user via oauth_accounts
+        // 2. Look up user via SECURITY DEFINER function
         let row: Option<(String, String, String, String)> = sqlx::query_as(
-            "SELECT u.id::text, uo.organization_id::text, u.email, o.slug
-             FROM oauth_accounts oa
-             JOIN app_users u ON u.id = oa.app_user_id
-             JOIN user_organizations uo ON uo.user_id = u.id AND uo.is_default = true
-             JOIN organizations o ON o.id = uo.organization_id
-             WHERE oa.provider = 'google' AND oa.provider_account_id = $1
-               AND u.deleted_at IS NULL",
+            "SELECT * FROM find_google_user($1)",
         )
         .bind(&google_claims.sub)
         .fetch_optional(&self.pool)
@@ -237,48 +181,19 @@ impl AuthService for AuthServiceImpl {
         let (user_id, org_id, email, org_slug) = if let Some(row) = row {
             row
         } else {
-            // Auto-register: create user in default organization
+            // Auto-register: create user in default organization via SECURITY DEFINER
             let default_org_id = "00000000-0000-0000-0000-000000000001";
-            let default_org_slug: String = sqlx::query_scalar(
-                "SELECT slug FROM organizations WHERE id = $1::uuid",
-            )
-            .bind(default_org_id)
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
-            let mut tx = self.pool.begin().await
-                .map_err(|e| Status::internal(format!("Transaction error: {}", e)))?;
-
-            let (new_user_id,): (String,) = sqlx::query_as(
-                "INSERT INTO app_users (email, display_name, avatar_url) VALUES ($1, $2, $3) RETURNING id::text",
+            let (new_user_id, default_org_slug): (String, String) = sqlx::query_as(
+                "SELECT * FROM auto_register_user($1, $2, $3, 'google', $4, NULL, $5::uuid, 'admin')",
             )
             .bind(&google_claims.email)
             .bind(google_claims.name.as_deref().unwrap_or(&google_claims.email))
             .bind(google_claims.picture.as_deref())
-            .fetch_one(&mut *tx)
+            .bind(&google_claims.sub)
+            .bind(default_org_id)
+            .fetch_one(&self.pool)
             .await
             .map_err(|e| Status::internal(format!("Failed to create user: {}", e)))?;
-
-            sqlx::query(
-                "INSERT INTO oauth_accounts (app_user_id, provider, provider_account_id) VALUES ($1::uuid, 'google', $2)",
-            )
-            .bind(&new_user_id)
-            .bind(&google_claims.sub)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| Status::internal(format!("Failed to create oauth account: {}", e)))?;
-
-            sqlx::query(
-                "INSERT INTO user_organizations (user_id, organization_id, role, is_default) VALUES ($1::uuid, $2::uuid, 'admin', true)",
-            )
-            .bind(&new_user_id)
-            .bind(default_org_id)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| Status::internal(format!("Failed to create user-org link: {}", e)))?;
-
-            tx.commit().await
-                .map_err(|e| Status::internal(format!("Transaction commit error: {}", e)))?;
 
             tracing::info!("Auto-registered Google user {} in default org", &google_claims.email);
             (new_user_id, default_org_id.to_string(), google_claims.email.clone(), default_org_slug)
@@ -306,16 +221,9 @@ impl AuthService for AuthServiceImpl {
             ));
         }
 
-        // Query password_credentials (NO FORCE RLS, so no set_current_organization needed)
+        // Query via SECURITY DEFINER function (app_users + organizations have RLS)
         let row: Option<(String, String, Option<String>, String)> = sqlx::query_as(
-            "SELECT pc.app_user_id::text, pc.password_hash, u.email, o.slug
-             FROM password_credentials pc
-             JOIN app_users u ON u.id = pc.app_user_id
-             JOIN organizations o ON o.id = pc.organization_id
-             WHERE pc.organization_id = $1::uuid
-               AND pc.username = $2
-               AND pc.enabled = true
-               AND u.deleted_at IS NULL",
+            "SELECT * FROM find_password_user($1::uuid, $2)",
         )
         .bind(&req.organization_id)
         .bind(&req.username)
@@ -500,13 +408,9 @@ impl AuthService for AuthServiceImpl {
             req.external_org_id
         );
 
-        // 5. Look up existing oauth_account
+        // 5. Look up existing oauth_account via SECURITY DEFINER function
         let existing: Option<(String, Option<String>)> = sqlx::query_as(
-            "SELECT u.id::text, u.email
-             FROM oauth_accounts oa
-             JOIN app_users u ON u.id = oa.app_user_id
-             WHERE oa.provider = $1 AND oa.provider_account_id = $2
-               AND u.deleted_at IS NULL",
+            "SELECT * FROM find_oauth_user($1, $2)",
         )
         .bind(&req.provider)
         .bind(&profile.provider_user_id)
@@ -515,9 +419,9 @@ impl AuthService for AuthServiceImpl {
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
 
         let (user_id, email) = if let Some((uid, email)) = existing {
-            // Existing user — ensure they're still a member of this org
-            let is_member: bool = sqlx::query_scalar(
-                "SELECT EXISTS(SELECT 1 FROM user_organizations WHERE user_id = $1::uuid AND organization_id = $2::uuid)",
+            // Existing user — ensure they're still a member of this org (SECURITY DEFINER)
+            sqlx::query_scalar::<_, bool>(
+                "SELECT * FROM ensure_org_membership($1::uuid, $2::uuid)",
             )
             .bind(&uid)
             .bind(&org_id)
@@ -525,71 +429,26 @@ impl AuthService for AuthServiceImpl {
             .await
             .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
 
-            if !is_member {
-                // Re-add to org (may have been removed and re-logging in)
-                sqlx::query(
-                    "INSERT INTO user_organizations (user_id, organization_id, role, is_default)
-                     VALUES ($1::uuid, $2::uuid, 'member', false)
-                     ON CONFLICT (user_id, organization_id) DO NOTHING",
-                )
-                .bind(&uid)
-                .bind(&org_id)
-                .execute(&self.pool)
-                .await
-                .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
-            }
-
             let username = email
                 .clone()
                 .unwrap_or_else(|| profile.display_name.clone());
             (uid, username)
         } else {
-            // 6. Auto-register new user
+            // 6. Auto-register new user via SECURITY DEFINER function
             let user_email = profile.email.as_deref();
 
-            let mut tx = self
-                .pool
-                .begin()
-                .await
-                .map_err(|e| Status::internal(format!("Transaction error: {}", e)))?;
-
-            // Create app_user
-            let (new_user_id,): (String,) = sqlx::query_as(
-                "INSERT INTO app_users (email, display_name) VALUES ($1, $2) RETURNING id::text",
+            let (new_user_id, _org_slug): (String, String) = sqlx::query_as(
+                "SELECT * FROM auto_register_user($1, $2, NULL, $3, $4, $5, $6::uuid)",
             )
             .bind(user_email)
             .bind(&profile.display_name)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|e| Status::internal(format!("Failed to create user: {}", e)))?;
-
-            // Create oauth_account
-            sqlx::query(
-                "INSERT INTO oauth_accounts (app_user_id, provider, provider_account_id, access_token)
-                 VALUES ($1::uuid, $2, $3, $4)",
-            )
-            .bind(&new_user_id)
             .bind(&req.provider)
             .bind(&profile.provider_user_id)
             .bind(&access_token)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| Status::internal(format!("Failed to create oauth account: {}", e)))?;
-
-            // Create user_organizations (member role, set as default)
-            sqlx::query(
-                "INSERT INTO user_organizations (user_id, organization_id, role, is_default)
-                 VALUES ($1::uuid, $2::uuid, 'member', true)",
-            )
-            .bind(&new_user_id)
             .bind(&org_id)
-            .execute(&mut *tx)
+            .fetch_one(&self.pool)
             .await
-            .map_err(|e| Status::internal(format!("Failed to create user-org link: {}", e)))?;
-
-            tx.commit()
-                .await
-                .map_err(|e| Status::internal(format!("Transaction commit error: {}", e)))?;
+            .map_err(|e| Status::internal(format!("Failed to create user: {}", e)))?;
 
             tracing::info!(
                 "Auto-registered SSO user {} ({}) via provider={} in org {}",
@@ -631,13 +490,9 @@ impl AuthService for AuthServiceImpl {
             return Err(Status::invalid_argument("organization_id is required"));
         }
 
-        // Verify membership + get org slug
-        let row: Option<(String, String)> = sqlx::query_as(
-            "SELECT uo.role, o.slug
-             FROM user_organizations uo
-             JOIN organizations o ON o.id = uo.organization_id
-             WHERE uo.user_id = $1::uuid AND uo.organization_id = $2::uuid
-               AND o.deleted_at IS NULL",
+        // Verify membership + get user info via SECURITY DEFINER function
+        let row: Option<(String, String, String)> = sqlx::query_as(
+            "SELECT * FROM get_user_org_for_switch($1::uuid, $2::uuid)",
         )
         .bind(&auth_user.user_id)
         .bind(&req.organization_id)
@@ -645,18 +500,9 @@ impl AuthService for AuthServiceImpl {
         .await
         .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
 
-        let (_role, org_slug) = row.ok_or_else(|| {
+        let (username, org_slug, _role) = row.ok_or_else(|| {
             Status::permission_denied("Not a member of the requested organization")
         })?;
-
-        // Get username for JWT (AuthenticatedUser doesn't carry username)
-        let username: String = sqlx::query_scalar(
-            "SELECT COALESCE(email, display_name) FROM app_users WHERE id = $1::uuid",
-        )
-        .bind(&auth_user.user_id)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| Status::internal(format!("Database error: {}", e)))?;
 
         let (token, exp) = self.issue_jwt(
             &auth_user.user_id,
