@@ -22,6 +22,7 @@ use rust_logi::proto::sso_settings::sso_settings_service_server::SsoSettingsServ
 use rust_logi::proto::bot_config::bot_config_service_server::BotConfigServiceServer;
 use rust_logi::proto::access_request::access_request_service_server::AccessRequestServiceServer;
 use rust_logi::proto::items::items_service_server::ItemsServiceServer;
+use rust_logi::proto::car_inspection::nfc_tag_service_server::NfcTagServiceServer;
 use rust_logi::services::cam_files_service::CamFileExeStageServiceImpl;
 use rust_logi::services::flickr_service::FlickrConfig;
 use rust_logi::services::{
@@ -33,6 +34,7 @@ use rust_logi::services::{
     BotConfigServiceImpl,
     AccessRequestServiceImpl,
     ItemsServiceImpl,
+    NfcTagServiceImpl,
 };
 use rust_logi::storage::{StorageBackend, GcsBackend, R2Backend};
 
@@ -141,7 +143,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let auth_service = AuthServiceImpl::new(
         pool.clone(),
         config.jwt_secret.clone(),
-        config.google_client_id.clone(),
+        config.google_client_ids.clone(),
     );
     let organization_service = OrganizationServiceImpl::new(pool.clone());
     let member_service = MemberServiceImpl::new(pool.clone(), config.jwt_secret.clone());
@@ -156,6 +158,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let items_service = ItemsServiceImpl::new(pool.clone());
+    let nfc_tag_service = NfcTagServiceImpl::new(pool.clone());
 
     // Auth middleware layer
     let auth_layer = AuthLayer::new(pool.clone(), config.jwt_secret.clone());
@@ -202,6 +205,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(BotConfigServiceServer::new(bot_config_service))
         .add_service(AccessRequestServiceServer::new(access_request_service))
         .add_service(ItemsServiceServer::new(items_service))
+        .add_service(NfcTagServiceServer::new(nfc_tag_service))
         .serve(addr)
         .await?;
 

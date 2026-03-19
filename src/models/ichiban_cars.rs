@@ -40,6 +40,7 @@ pub struct HomeCarEntry {
 #[derive(Debug, Clone, FromRow)]
 pub struct CarInspectionWithRelationsModel {
     // CarInspection fields
+    pub id: i32,
     #[sqlx(rename = "CertInfoImportFileVersion")]
     pub cert_info_import_file_version: String,
     #[sqlx(rename = "Acceptoutputno")]

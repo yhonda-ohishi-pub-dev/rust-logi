@@ -185,6 +185,9 @@ message CarInspection {
   // ファイル紐付け情報
   optional string pdf_uuid = 98;
   optional string json_uuid = 99;
+
+  // DB ID（NFC タグ紐づけ等で使用）
+  int32 id = 100;
 }
 
 // 車検証ファイル
@@ -290,4 +293,57 @@ message DtakoCarsIchibanCar {
 // ホーム車両継続検査対象レスポンス
 message ListRenewHomeTargetsResponse {
   repeated CarInspectionWithRelations car_inspections = 1;
+}
+
+// NFC Tag Service - NFCタグと車検証の紐付け
+service NfcTagService {
+  // NFC UUIDで車検証を検索
+  rpc SearchByNfcUuid(SearchByNfcUuidRequest) returns (SearchByNfcUuidResponse);
+
+  // NFCタグを車検証に登録
+  rpc RegisterNfcTag(RegisterNfcTagRequest) returns (NfcTagResponse);
+
+  // NFCタグ一覧を取得
+  rpc ListNfcTags(ListNfcTagsRequest) returns (ListNfcTagsResponse);
+
+  // NFCタグを削除
+  rpc DeleteNfcTag(DeleteNfcTagRequest) returns (logi.common.Empty);
+}
+
+// NFCタグ
+message NfcTag {
+  int32 id = 1;
+  string nfc_uuid = 2;
+  int32 car_inspection_id = 3;
+  string created_at = 4;
+}
+
+message SearchByNfcUuidRequest {
+  string nfc_uuid = 1;
+}
+
+message SearchByNfcUuidResponse {
+  optional CarInspection car_inspection = 1;
+  optional NfcTag nfc_tag = 2;
+}
+
+message RegisterNfcTagRequest {
+  string nfc_uuid = 1;
+  int32 car_inspection_id = 2;
+}
+
+message NfcTagResponse {
+  NfcTag nfc_tag = 1;
+}
+
+message ListNfcTagsRequest {
+  optional int32 car_inspection_id = 1;
+}
+
+message ListNfcTagsResponse {
+  repeated NfcTag nfc_tags = 1;
+}
+
+message DeleteNfcTagRequest {
+  string nfc_uuid = 1;
 }

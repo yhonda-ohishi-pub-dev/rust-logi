@@ -90,7 +90,6 @@ cd /home/yhonda/rust/rust-logi/cf-container && npx wrangler deploy
 
 # rust-logi (Cloud Run) — フォールバック用（フロントエンドからは未使用）
 ./deploy.sh
-# ※ Docker キャッシュ問題あり: src変更時は docker build --no-cache を使うこと
 
 # auth-worker (Cloudflare Workers) — git push で自動デプロイ
 cd /home/yhonda/js/auth-worker && git push

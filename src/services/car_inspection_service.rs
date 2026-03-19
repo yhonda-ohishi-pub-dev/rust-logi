@@ -45,8 +45,9 @@ impl CarInspectionServiceImpl {
         Self { pool, http_client, dtako_api_url }
     }
 
-    fn model_to_proto(model: &CarInspectionModel) -> CarInspection {
+    pub fn model_to_proto(model: &CarInspectionModel) -> CarInspection {
         CarInspection {
+            id: model.id,
             cert_info_import_file_version: model.cert_info_import_file_version.clone(),
             acceptoutputno: model.acceptoutputno.clone(),
             form_type: model.form_type.clone(),
@@ -676,6 +677,7 @@ impl CarInspectionService for CarInspectionServiceImpl {
                 FROM latest_inspections li
             )
             SELECT
+                wf.id,
                 wf."CertInfoImportFileVersion",
                 wf."Acceptoutputno",
                 wf."FormType",
@@ -832,6 +834,7 @@ impl CarInspectionService for CarInspectionServiceImpl {
             })
             .map(|model| {
                 let car_inspection = CarInspection {
+                    id: model.id,
                     cert_info_import_file_version: model.cert_info_import_file_version.clone(),
                     acceptoutputno: model.acceptoutputno.clone(),
                     form_type: model.form_type.clone(),

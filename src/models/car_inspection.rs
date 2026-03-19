@@ -3,6 +3,7 @@ use sqlx::FromRow;
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct CarInspectionModel {
+    pub id: i32,
     #[sqlx(rename = "CertInfoImportFileVersion")]
     pub cert_info_import_file_version: String,
     #[sqlx(rename = "Acceptoutputno")]

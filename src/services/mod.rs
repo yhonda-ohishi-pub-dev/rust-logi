@@ -15,6 +15,7 @@ pub mod sso_settings_service;
 pub mod bot_config_service;
 pub mod access_request_service;
 pub mod items_service;
+pub mod nfc_tag_service;
 
 pub use file_auto_parser::FileAutoParser;
 pub use files_service::FilesServiceImpl;
@@ -32,3 +33,4 @@ pub use sso_settings_service::SsoSettingsServiceImpl;
 pub use bot_config_service::BotConfigServiceImpl;
 pub use access_request_service::AccessRequestServiceImpl;
 pub use items_service::ItemsServiceImpl;
+pub use nfc_tag_service::NfcTagServiceImpl;

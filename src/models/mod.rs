@@ -11,6 +11,7 @@ pub mod app_user;
 pub mod organization_model;
 pub mod password_credential;
 pub mod item;
+pub mod nfc_tag;
 
 pub use files::*;
 pub use car_inspection::*;
@@ -25,3 +26,4 @@ pub use app_user::*;
 pub use organization_model::*;
 pub use password_credential::*;
 pub use item::*;
+pub use nfc_tag::*;
