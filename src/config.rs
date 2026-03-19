@@ -42,7 +42,7 @@ pub struct Config {
     pub dvr_lineworks_bot_url: Option<String>,
     pub cam_config: Option<CamConfig>,
     pub jwt_secret: String,
-    pub google_client_id: Option<String>,
+    pub google_client_ids: Vec<String>,
 }
 
 impl Config {
@@ -73,7 +73,10 @@ impl Config {
             dvr_lineworks_bot_url: env::var("DVR_LINEWORKS_BOT_URL").ok(),
             cam_config: CamConfig::from_env(),
             jwt_secret: env::var("JWT_SECRET")?,
-            google_client_id: env::var("GOOGLE_CLIENT_ID").ok(),
+            google_client_ids: env::var("GOOGLE_CLIENT_IDS")
+                .or_else(|_| env::var("GOOGLE_CLIENT_ID"))
+                .map(|s| s.split(',').map(|id| id.trim().to_string()).collect())
+                .unwrap_or_default(),
         })
     }
 

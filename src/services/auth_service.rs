@@ -37,8 +37,12 @@ pub struct AuthServiceImpl {
 }
 
 impl AuthServiceImpl {
-    pub fn new(pool: PgPool, jwt_secret: String, google_client_id: Option<String>) -> Self {
-        let google_verifier = google_client_id.map(GoogleTokenVerifier::new);
+    pub fn new(pool: PgPool, jwt_secret: String, google_client_ids: Vec<String>) -> Self {
+        let google_verifier = if google_client_ids.is_empty() {
+            None
+        } else {
+            Some(GoogleTokenVerifier::new(google_client_ids))
+        };
         Self {
             pool,
             jwt_secret,

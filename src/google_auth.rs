@@ -64,23 +64,38 @@ struct JwksCache {
 #[derive(Clone)]
 pub struct GoogleTokenVerifier {
     client: Client,
-    client_id: String,
+    client_ids: Vec<String>,
     cache: Arc<RwLock<Option<JwksCache>>>,
 }
 
 impl GoogleTokenVerifier {
-    pub fn new(client_id: String) -> Self {
+    pub fn new(client_ids: Vec<String>) -> Self {
         Self {
             client: Client::new(),
-            client_id,
+            client_ids,
             cache: Arc::new(RwLock::new(None)),
         }
     }
 
     /// Verify a Google ID token and return the claims
     pub async fn verify(&self, id_token: &str) -> Result<GoogleClaims, String> {
+        let prefix_len = std::cmp::min(20, id_token.len());
+        tracing::debug!(
+            "Google token verify: len={}, prefix={:?}",
+            id_token.len(),
+            &id_token[..prefix_len]
+        );
+
         // Decode header to get kid
-        let header = decode_header(id_token).map_err(|e| format!("Invalid token header: {}", e))?;
+        let header = decode_header(id_token).map_err(|e| {
+            tracing::warn!(
+                "Invalid Google ID token: {} (len={}, prefix={:?})",
+                e,
+                id_token.len(),
+                &id_token[..prefix_len]
+            );
+            format!("Invalid token header: {}", e)
+        })?;
         let kid = header.kid.ok_or("Token missing kid header")?;
 
         // Get the matching key from JWKS
@@ -88,7 +103,8 @@ impl GoogleTokenVerifier {
 
         // Validate the token
         let mut validation = Validation::new(Algorithm::RS256);
-        validation.set_audience(&[&self.client_id]);
+        let aud_refs: Vec<&str> = self.client_ids.iter().map(|s| s.as_str()).collect();
+        validation.set_audience(&aud_refs);
         validation.set_issuer(ALLOWED_ISSUERS);
 
         let token_data = decode::<GoogleIdTokenClaims>(id_token, &decoding_key, &validation)
