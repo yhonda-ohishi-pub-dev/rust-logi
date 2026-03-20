@@ -161,7 +161,8 @@ rust-alc-api: tenant_id      = "00000000-0000-0000-0000-000000000001"
                                  ↑ 同じ UUID
 ```
 
-- 1社（大石運輸倉庫）のみ運用中
+- 両方ともマルチテナント対応（RLS で分離）
+- 現在は1社（大石運輸倉庫）のみ運用中
 - auth-worker の JWT `org` クレーム = rust-alc-api の `tenant_id`
 - 移動済みテーブルの RLS は `COALESCE(current_tenant_id, current_organization_id)` で両方対応
 
