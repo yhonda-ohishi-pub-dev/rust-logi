@@ -84,6 +84,9 @@ impl MemberServiceImpl {
             iat: now.timestamp(),
             provider: provider.to_string(),
             org_slug: org_slug.to_string(),
+            tenant_id: None,
+            email: None,
+            name: None,
         };
         let token = encode(
             &Header::default(),

@@ -7,6 +7,7 @@ hono-logiのRust実装（gRPC-Web対応）
 新しいセッション開始時は必ずここに記載されたファイルを読んで前回の状況を把握すること。
 handoverの全タスクが完了したら `handover/completed/` に移動し、ここのパスを削除すること。
 
+- `handover/2026-03-20_auth-unification.md` — auth-worker → rust-alc-api 認証統合（carins完了・items/dtako移行残り）
 - `handover/2026-03-20_carins-migration.md` — nuxt-pwa-carins → rust-alc-api 移行（Phase 0-5 完了・デプロイ前）
 - `handover/2026-02-25_14-35.md` — GrpcWebTrailerFix ミドルウェア + CF Containers デプロイ（`incomplete envelope` エラー未解決）
 - `handover/2026-02-25_13-45.md` — Phase 3 CF Containers デプロイ（gRPC エラーレスポンス問題で中断）

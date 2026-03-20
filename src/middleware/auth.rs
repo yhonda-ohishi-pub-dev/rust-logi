@@ -147,6 +147,9 @@ where
 
             if let Some(claims) = jwt_claims {
                 // JWT is valid — determine effective org_id
+                // Support both auth-worker JWT (org) and rust-alc-api JWT (tenant_id)
+                let jwt_org = claims.effective_org_id().to_string();
+
                 let requested_org = req
                     .headers()
                     .get(ORG_HEADER)
@@ -155,7 +158,7 @@ where
                     .map(|s| s.to_string());
 
                 let (effective_org_id, role) = if let Some(ref org_id) = requested_org {
-                    if *org_id != claims.org {
+                    if *org_id != jwt_org {
                         // User is requesting a different org — verify membership
                         match verify_membership(&pool, &claims.sub, org_id).await {
                             Ok(role) => (org_id.clone(), role),
@@ -173,13 +176,13 @@ where
                     } else {
                         match verify_membership(&pool, &claims.sub, org_id).await {
                             Ok(role) => (org_id.clone(), role),
-                            Err(_) => (claims.org.clone(), "member".to_string()),
+                            Err(_) => (jwt_org.clone(), "member".to_string()),
                         }
                     }
                 } else {
-                    match verify_membership(&pool, &claims.sub, &claims.org).await {
-                        Ok(role) => (claims.org.clone(), role),
-                        Err(_) => (claims.org.clone(), "member".to_string()),
+                    match verify_membership(&pool, &claims.sub, &jwt_org).await {
+                        Ok(role) => (jwt_org.clone(), role),
+                        Err(_) => (jwt_org.clone(), "member".to_string()),
                     }
                 };
 

@@ -19,7 +19,9 @@ use crate::services::sso_providers;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
     pub sub: String,
+    #[serde(default)]
     pub org: String,
+    #[serde(default)]
     pub username: String,
     pub exp: i64,
     pub iat: i64,
@@ -27,6 +29,23 @@ pub struct Claims {
     pub provider: String,
     #[serde(default)]
     pub org_slug: String,
+    // rust-alc-api JWT fields
+    #[serde(default)]
+    pub tenant_id: Option<String>,
+    #[serde(default)]
+    pub email: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+impl Claims {
+    /// tenant_id 優先、フォールバックで org
+    pub fn effective_org_id(&self) -> &str {
+        self.tenant_id
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(&self.org)
+    }
 }
 
 pub struct AuthServiceImpl {
@@ -69,6 +88,9 @@ impl AuthServiceImpl {
             iat: now.timestamp(),
             provider: provider.to_string(),
             org_slug: org_slug.to_string(),
+            tenant_id: None,
+            email: None,
+            name: None,
         };
         let token = encode(
             &Header::default(),
@@ -271,7 +293,7 @@ impl AuthService for AuthServiceImpl {
         match result {
             Ok(data) => Ok(Response::new(ValidateTokenResponse {
                 valid: true,
-                organization_id: data.claims.org,
+                organization_id: data.claims.effective_org_id().to_string(),
                 user_id: data.claims.sub,
                 username: data.claims.username,
             })),
