@@ -19,6 +19,7 @@ front/
 workers/
 /services/
 legacy/
+android/
 
 # Cloud SQL Proxy binary
 cloud-sql-proxy

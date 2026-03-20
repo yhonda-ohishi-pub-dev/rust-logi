@@ -20,7 +20,8 @@
       "/home/yhonda/rust/smb-watch/src",
       "/home/yhonda/js/auth-worker/src/lib",
       "/home/yhonda/js/auth-worker/src/handlers",
-      "/home/yhonda/js/auth-worker/src"
+      "/home/yhonda/js/auth-worker/src",
+      "/home/yhonda/android/ShakenApp"
     ]
   }
 }
