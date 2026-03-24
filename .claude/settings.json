@@ -1,5 +1,4 @@
 {
-  "language": "japanese",
   "permissions": {
     "allow": [
       "Read(//home/yhonda/js/nuxt_dtako_logs/**)",
@@ -10,7 +9,8 @@
       "Read(//dev/**)",
       "Read(//home/yhonda/rust/rust-logi/**)",
       "mcp__cloudflare-docs__search_cloudflare_documentation",
-      "Bash(cargo test:*)"
+      "Bash(cargo test:*)",
+      "Bash(gcloud run:*)"
     ],
     "additionalDirectories": [
       "/home/yhonda/js/nuxt-pwa-carins",
@@ -18,10 +18,12 @@
       "/home/yhonda/js/smb-upload-worker",
       "/home/yhonda/js/nuxt_dtako_logs/cf-grpc-proxy/src",
       "/home/yhonda/rust/smb-watch/src",
+      "/home/yhonda/rust/rust-ichibanboshi",
       "/home/yhonda/js/auth-worker/src/lib",
       "/home/yhonda/js/auth-worker/src/handlers",
       "/home/yhonda/js/auth-worker/src",
       "/home/yhonda/android/ShakenApp"
     ]
-  }
+  },
+  "language": "japanese"
 }
