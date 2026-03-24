@@ -114,6 +114,39 @@ cd /home/yhonda/js/smb-upload-worker && npx wrangler deploy
 cd /home/yhonda/js/cf-billing-monitor && npx wrangler deploy
 ```
 
+## 監視 (Cloud Monitoring)
+
+### ログベースアラート: BulkCreate 失敗検知
+- **ポリシー名**: `rust-logi BulkCreate Failed`
+- **条件**: Cloud Run ログに `BulkCreate completed: success=false` が出現
+- **通知先**: `m.tama.ramu@gmail.com`
+- **レート制限**: 1時間に1通
+- **自動クローズ**: 24時間
+
+### 管理コマンド
+```bash
+# アラートポリシー一覧
+gcloud alpha monitoring policies list
+
+# テストログ送信（アラート発火テスト用）
+curl -s -X POST "https://logging.googleapis.com/v2/entries:write" \
+  -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "logName": "projects/cloudsql-sv/logs/run.googleapis.com%2Fstdout",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "service_name": "rust-logi",
+        "location": "asia-northeast1",
+        "revision_name": "rust-logi-00150-6bf",
+        "configuration_name": "rust-logi"
+      }
+    },
+    "entries": [{"textPayload": "BulkCreate completed: success=false, records_added=0, total_records=210 [TEST]"}]
+  }'
+```
+
 ## CF Containers 構成
 
 ### アーキテクチャ
